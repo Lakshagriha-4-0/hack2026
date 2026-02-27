@@ -1,9 +1,11 @@
 const User = require('../models/User');
 const Job = require('../models/Job');
 const Application = require('../models/Application');
+const EligibilityTest = require('../models/EligibilityTest');
 const calcMatchScore = require('../utils/calcMatchScore');
 const logger = require('../utils/logger');
 const generateCandidateId = require('../utils/generateCandidateId');
+const { generateEligibilityQuestions, evaluateAnswers } = require('../utils/eligibilityTestUtils');
 const {
     extractResumeText,
     extractDetailsFromResume,
@@ -337,6 +339,154 @@ const getOrCreateCandidatePublicId = async (user) => {
     return user.candidatePublicId;
 };
 
+// @desc    Get jobs suitable for candidate skills
+// @route   GET /api/candidate/jobs/suitable
+// @access  Private/Candidate
+const getSuitableJobs = async (req, res) => {
+    const user = await User.findById(req.user._id).select('candidateProfile.public.skills').lean();
+    const candidateSkills = Array.isArray(user?.candidateProfile?.public?.skills)
+        ? user.candidateProfile.public.skills
+        : [];
+
+    if (!candidateSkills.length) {
+        return res.json([]);
+    }
+
+    const jobs = await Job.find({})
+        .select('recruiterId title description requiredSkills experienceLevel location salaryRange createdAt')
+        .populate('recruiterId', 'name email')
+        .lean();
+
+    const suitedJobs = jobs
+        .map((job) => {
+            const { score, matchedSkills, missingSkills } = calcMatchScore(job.requiredSkills, candidateSkills);
+            return {
+                ...job,
+                matchScore: score,
+                matchedSkills,
+                missingSkills,
+            };
+        })
+        .filter((job) => job.matchScore > 0)
+        .sort((a, b) => b.matchScore - a.matchScore);
+
+    res.json(suitedJobs);
+};
+
+// @desc    Start or restart eligibility test for a job
+// @route   POST /api/candidate/eligibility/:jobId/start
+// @access  Private/Candidate
+const startEligibilityTest = async (req, res) => {
+    const job = await Job.findById(req.params.jobId).select('title requiredSkills').lean();
+    if (!job) {
+        return res.status(404).json({ message: 'Job not found' });
+    }
+
+    const { generatedBy, questions } = await generateEligibilityQuestions(job);
+    if (!questions.length) {
+        return res.status(500).json({ message: 'Failed to generate eligibility test' });
+    }
+
+    const test = await EligibilityTest.findOneAndUpdate(
+        { candidateId: req.user._id, jobId: job._id },
+        {
+            $set: {
+                requiredSkillsSnapshot: job.requiredSkills || [],
+                questions,
+                passScore: 60,
+                score: 0,
+                status: 'pending',
+                answers: [],
+                generatedBy,
+                submittedAt: null,
+            },
+        },
+        { new: true, upsert: true, setDefaultsOnInsert: true }
+    ).lean();
+
+    res.json({
+        jobId: job._id,
+        status: test.status,
+        passScore: test.passScore,
+        questions: test.questions.map((q) => ({
+            questionId: q.questionId,
+            question: q.question,
+            options: q.options,
+        })),
+    });
+};
+
+// @desc    Get eligibility test status for a job
+// @route   GET /api/candidate/eligibility/:jobId
+// @access  Private/Candidate
+const getEligibilityStatus = async (req, res) => {
+    const test = await EligibilityTest.findOne({
+        candidateId: req.user._id,
+        jobId: req.params.jobId,
+    }).lean();
+
+    if (!test) {
+        return res.status(404).json({ message: 'Eligibility test not started' });
+    }
+
+    res.json({
+        jobId: test.jobId,
+        status: test.status,
+        score: test.score,
+        passScore: test.passScore,
+        submittedAt: test.submittedAt,
+        questions: test.status === 'pending'
+            ? test.questions.map((q) => ({
+                questionId: q.questionId,
+                question: q.question,
+                options: q.options,
+            }))
+            : undefined,
+    });
+};
+
+// @desc    Submit eligibility test answers
+// @route   POST /api/candidate/eligibility/:jobId/submit
+// @access  Private/Candidate
+const submitEligibilityTest = async (req, res) => {
+    const { answers } = req.body;
+    if (!Array.isArray(answers) || !answers.length) {
+        return res.status(400).json({ message: 'Answers are required' });
+    }
+
+    const test = await EligibilityTest.findOne({
+        candidateId: req.user._id,
+        jobId: req.params.jobId,
+    });
+    if (!test) {
+        return res.status(404).json({ message: 'Eligibility test not found. Start test first.' });
+    }
+
+    const { score } = evaluateAnswers(test.questions, answers);
+    const passed = score >= test.passScore;
+
+    test.answers = answers
+        .map((a) => ({
+            questionId: String(a?.questionId || ''),
+            answer: String(a?.answer || '').trim(),
+        }))
+        .filter((a) => a.questionId && a.answer);
+    test.score = score;
+    test.status = passed ? 'passed' : 'failed';
+    test.submittedAt = new Date();
+    await test.save();
+
+    res.json({
+        jobId: test.jobId,
+        status: test.status,
+        score: test.score,
+        passScore: test.passScore,
+        message: passed
+            ? 'Eligibility test passed. You can now apply.'
+            : 'Eligibility test not passed. Retry to apply later.',
+    });
+};
+
 // @desc    Apply to a job
 // @route   POST /api/jobs/:jobId/apply
 // @access  Private/Candidate
@@ -356,6 +506,15 @@ const applyToJob = async (req, res) => {
     if (alreadyApplied) {
         res.status(400);
         throw new Error('Already applied for this job');
+    }
+
+    const eligibility = await EligibilityTest.findOne({
+        candidateId: req.user._id,
+        jobId: job._id,
+    }).lean();
+    if (!eligibility || eligibility.status !== 'passed') {
+        res.status(403);
+        throw new Error('You must pass the eligibility test before applying');
     }
 
     const user = await User.findById(req.user._id);
@@ -404,11 +563,77 @@ const applyToJob = async (req, res) => {
 // @access  Private/Candidate
 const getMyApplications = async (req, res) => {
     const applications = await Application.find({ candidateId: req.user._id })
-        .select('jobId status createdAt matchScore')
+        .select('jobId status createdAt matchScore recruiterWorkTest')
         .populate({ path: 'jobId', select: 'title description location', options: { lean: true } })
         .sort('-createdAt')
         .lean();
     res.json(applications);
+};
+
+// @desc    Get assigned recruiter work test for candidate application
+// @route   GET /api/candidate/applications/:appId/work-test
+// @access  Private/Candidate
+const getMyWorkTest = async (req, res) => {
+    const application = await Application.findOne({
+        _id: req.params.appId,
+        candidateId: req.user._id,
+    })
+        .select('jobId status recruiterWorkTest')
+        .populate({ path: 'jobId', select: 'title', options: { lean: true } })
+        .lean();
+
+    if (!application) {
+        return res.status(404).json({ message: 'Application not found' });
+    }
+
+    const workTest = application.recruiterWorkTest || {};
+    if (!workTest.prompt) {
+        return res.status(404).json({ message: 'Recruiter work test is not assigned yet' });
+    }
+
+    res.json({
+        applicationId: application._id,
+        job: application.jobId,
+        status: application.status,
+        reviewStatus: workTest.reviewStatus,
+        prompt: workTest.prompt,
+        assignedAt: workTest.assignedAt,
+        submittedAt: workTest.submittedAt,
+        recruiterFeedback: workTest.recruiterFeedback || '',
+    });
+};
+
+// @desc    Submit response for recruiter work test
+// @route   POST /api/candidate/applications/:appId/work-test/submit
+// @access  Private/Candidate
+const submitMyWorkTest = async (req, res) => {
+    const { responseText } = req.body;
+    if (!String(responseText || '').trim()) {
+        return res.status(400).json({ message: 'Response text is required' });
+    }
+
+    const application = await Application.findOne({
+        _id: req.params.appId,
+        candidateId: req.user._id,
+    });
+    if (!application) {
+        return res.status(404).json({ message: 'Application not found' });
+    }
+
+    if (!application.recruiterWorkTest?.prompt) {
+        return res.status(400).json({ message: 'Recruiter work test is not assigned yet' });
+    }
+
+    application.recruiterWorkTest.candidateResponse = String(responseText).trim();
+    application.recruiterWorkTest.submittedAt = new Date();
+    application.recruiterWorkTest.reviewStatus = 'submitted';
+    await application.save();
+
+    res.json({
+        message: 'Work test submitted successfully',
+        reviewStatus: application.recruiterWorkTest.reviewStatus,
+        submittedAt: application.recruiterWorkTest.submittedAt,
+    });
 };
 
 // @desc    Auto-fill profile from already uploaded resume
@@ -547,7 +772,13 @@ module.exports = {
     uploadResume,
     downloadResume,
     uploadProfilePhoto,
+    getSuitableJobs,
+    startEligibilityTest,
+    getEligibilityStatus,
+    submitEligibilityTest,
     applyToJob,
     getMyApplications,
+    getMyWorkTest,
+    submitMyWorkTest,
     autoFillProfile,
 };

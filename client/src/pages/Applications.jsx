@@ -8,6 +8,8 @@ const Applications = () => {
     const [applications, setApplications] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [workTests, setWorkTests] = useState({});
+    const [responseDrafts, setResponseDrafts] = useState({});
 
     useEffect(() => {
         const fetchApplications = async () => {
@@ -25,9 +27,46 @@ const Applications = () => {
 
     const getStatusColor = (status) => {
         switch (status) {
+            case 'accepted': return 'text-emerald-300 bg-emerald-400/15 border-emerald-500/30';
             case 'shortlisted': return 'text-emerald-400 bg-emerald-400/10 border-emerald-500/20';
             case 'rejected': return 'text-red-400 bg-red-400/10 border-red-500/20';
             default: return 'text-blue-400 bg-blue-400/10 border-blue-500/20';
+        }
+    };
+
+    const loadWorkTest = async (appId) => {
+        try {
+            const { data } = await api.get(`/candidate/applications/${appId}/work-test`);
+            setWorkTests((prev) => ({ ...prev, [appId]: data }));
+        } catch (err) {
+            setWorkTests((prev) => ({
+                ...prev,
+                [appId]: { error: err.response?.data?.message || 'No recruiter test yet' },
+            }));
+        }
+    };
+
+    const submitWorkTest = async (appId) => {
+        const responseText = String(responseDrafts[appId] || '').trim();
+        if (!responseText) return;
+        try {
+            await api.post(`/candidate/applications/${appId}/work-test/submit`, { responseText });
+            await loadWorkTest(appId);
+            setApplications((prev) =>
+                prev.map((a) =>
+                    a._id === appId
+                        ? {
+                            ...a,
+                            recruiterWorkTest: {
+                                ...(a.recruiterWorkTest || {}),
+                                reviewStatus: 'submitted',
+                            },
+                        }
+                        : a
+                )
+            );
+        } catch (err) {
+            setError(err.response?.data?.message || 'Failed to submit test');
         }
     };
 
@@ -72,7 +111,7 @@ const Applications = () => {
 
                                     {app.status === 'shortlisted' && (
                                         <div className="text-sm font-medium text-emerald-400 bg-emerald-400/10 px-4 py-1.5 rounded-lg">
-                                            Recruiter may contact you
+                                            Recruiter shortlisted you
                                         </div>
                                     )}
 
@@ -80,6 +119,53 @@ const Applications = () => {
                                         <ChevronRight className="w-5 h-5" />
                                     </Link>
                                 </div>
+
+                                {(app.status === 'shortlisted' || app.status === 'accepted') && (
+                                    <div className="w-full border-t border-slate-800 pt-4 mt-2">
+                                        <button
+                                            onClick={() => loadWorkTest(app._id)}
+                                            className="text-xs bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg font-semibold"
+                                        >
+                                            Load Recruiter Work Test
+                                        </button>
+                                        {workTests[app._id]?.error && (
+                                            <p className="text-xs text-slate-500 mt-2">{workTests[app._id].error}</p>
+                                        )}
+                                        {workTests[app._id]?.prompt && (
+                                            <div className="mt-3 bg-slate-800/40 border border-slate-700 rounded-xl p-3 space-y-2">
+                                                <p className="text-xs text-slate-500 uppercase tracking-wider font-bold">Work Test Prompt</p>
+                                                <p className="text-sm text-slate-300 whitespace-pre-wrap">{workTests[app._id].prompt}</p>
+                                                <p className="text-xs text-slate-500">
+                                                    Review status: {workTests[app._id].reviewStatus}
+                                                </p>
+                                                {workTests[app._id].reviewStatus === 'assigned' && (
+                                                    <>
+                                                        <textarea
+                                                            rows={3}
+                                                            className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm"
+                                                            placeholder="Write your solution/approach..."
+                                                            value={responseDrafts[app._id] || ''}
+                                                            onChange={(e) =>
+                                                                setResponseDrafts((prev) => ({ ...prev, [app._id]: e.target.value }))
+                                                            }
+                                                        />
+                                                        <button
+                                                            onClick={() => submitWorkTest(app._id)}
+                                                            className="text-xs bg-blue-600 hover:bg-blue-500 px-3 py-1.5 rounded-lg font-semibold"
+                                                        >
+                                                            Submit Work Test
+                                                        </button>
+                                                    </>
+                                                )}
+                                                {workTests[app._id].recruiterFeedback && (
+                                                    <p className="text-xs text-emerald-300">
+                                                        Recruiter feedback: {workTests[app._id].recruiterFeedback}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>

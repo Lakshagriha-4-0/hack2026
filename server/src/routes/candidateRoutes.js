@@ -5,8 +5,14 @@ const {
     uploadResume,
     downloadResume,
     uploadProfilePhoto,
+    getSuitableJobs,
+    startEligibilityTest,
+    getEligibilityStatus,
+    submitEligibilityTest,
     applyToJob,
     getMyApplications,
+    getMyWorkTest,
+    submitMyWorkTest,
     autoFillProfile,
 } = require('../controllers/candidateController');
 const { protect, authorize } = require('../middleware/authMiddleware');
@@ -18,7 +24,13 @@ router.post('/profile/resume', protect, authorize('candidate'), resumeUpload.sin
 router.post('/profile/auto-fill', protect, authorize('candidate'), autoFillProfile);
 router.get('/profile/resume/download', protect, authorize('candidate'), downloadResume);
 router.post('/profile/photo', protect, authorize('candidate'), upload.single('photo'), uploadProfilePhoto);
+router.get('/jobs/suitable', protect, authorize('candidate'), getSuitableJobs);
+router.post('/eligibility/:jobId/start', protect, authorize('candidate'), startEligibilityTest);
+router.get('/eligibility/:jobId', protect, authorize('candidate'), getEligibilityStatus);
+router.post('/eligibility/:jobId/submit', protect, authorize('candidate'), submitEligibilityTest);
 router.get('/applications', protect, authorize('candidate'), getMyApplications);
+router.get('/applications/:appId/work-test', protect, authorize('candidate'), getMyWorkTest);
+router.post('/applications/:appId/work-test/submit', protect, authorize('candidate'), submitMyWorkTest);
 router.post('/apply/:jobId', protect, authorize('candidate'), applyToJob);
 
 module.exports = router;

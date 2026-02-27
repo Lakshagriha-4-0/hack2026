@@ -11,6 +11,8 @@ const JobApplications = () => {
     const [error, setError] = useState('');
     const [revealedIds, setRevealedIds] = useState({});
     const [job, setJob] = useState(null);
+    const [workTestDrafts, setWorkTestDrafts] = useState({});
+    const [feedbackDrafts, setFeedbackDrafts] = useState({});
 
     useEffect(() => {
         const fetchData = async () => {
@@ -47,6 +49,36 @@ const JobApplications = () => {
             setRevealedIds({ ...revealedIds, [appId]: data.privateProfile });
         } catch (err) {
             alert(err.response?.data?.message || 'Failed to reveal identity');
+        }
+    };
+
+    const assignWorkTest = async (appId) => {
+        const prompt = (workTestDrafts[appId] || '').trim();
+        if (!prompt) {
+            alert('Enter work test prompt first');
+            return;
+        }
+        try {
+            const { data } = await api.post(`/recruiter/applications/${appId}/work-test`, { prompt });
+            setApplications(applications.map(app =>
+                app._id === appId ? { ...app, recruiterWorkTest: data.recruiterWorkTest } : app
+            ));
+        } catch (err) {
+            alert(err.response?.data?.message || 'Failed to assign work test');
+        }
+    };
+
+    const reviewWorkTest = async (appId, reviewStatus) => {
+        try {
+            const { data } = await api.put(`/recruiter/applications/${appId}/work-test/review`, {
+                reviewStatus,
+                feedback: feedbackDrafts[appId] || '',
+            });
+            setApplications(applications.map(app =>
+                app._id === appId ? { ...app, status: data.status, recruiterWorkTest: data.recruiterWorkTest } : app
+            ));
+        } catch (err) {
+            alert(err.response?.data?.message || 'Failed to review work test');
         }
     };
 
@@ -107,13 +139,24 @@ const JobApplications = () => {
                                                     </button>
                                                 </>
                                             )}
-                                            {app.status === 'shortlisted' && !revealedIds[app._id] && (
+                                            {app.status === 'shortlisted' && app.recruiterWorkTest?.reviewStatus === 'passed' && (
+                                                <button
+                                                    onClick={() => updateStatus(app._id, 'accepted')}
+                                                    className="bg-blue-600 hover:bg-blue-500 px-6 py-2 rounded-xl font-bold transition-all"
+                                                >
+                                                    Accept Candidate
+                                                </button>
+                                            )}
+                                            {app.status === 'accepted' && !revealedIds[app._id] && (
                                                 <button
                                                     onClick={() => revealIdentity(app._id)}
                                                     className="bg-blue-600 hover:bg-blue-500 px-6 py-2 rounded-xl font-bold transition-all flex items-center gap-2"
                                                 >
                                                     <Shield className="w-4 h-4" /> Reveal Identity
                                                 </button>
+                                            )}
+                                            {app.status === 'accepted' && (
+                                                <span className="text-emerald-400 font-bold uppercase tracking-widest text-sm border border-emerald-400/20 bg-emerald-400/5 px-6 py-2 rounded-xl">Accepted</span>
                                             )}
                                             {app.status === 'rejected' && (
                                                 <span className="text-red-400 font-bold uppercase tracking-widest text-sm border border-red-400/20 bg-red-400/5 px-6 py-2 rounded-xl">Rejected</span>
@@ -197,6 +240,59 @@ const JobApplications = () => {
                                                     </pre>
                                                 </div>
                                             )}
+
+                                            {app.status === 'shortlisted' && (
+                                                <div className="space-y-3">
+                                                    <h4 className="text-sm font-bold text-slate-500 uppercase tracking-widest">Recruiter Work Test</h4>
+                                                    <textarea
+                                                        rows={3}
+                                                        placeholder="Add a task prompt for candidate..."
+                                                        className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-sm"
+                                                        value={workTestDrafts[app._id] ?? app.recruiterWorkTest?.prompt ?? ''}
+                                                        onChange={(e) =>
+                                                            setWorkTestDrafts((prev) => ({ ...prev, [app._id]: e.target.value }))
+                                                        }
+                                                    />
+                                                    <button
+                                                        onClick={() => assignWorkTest(app._id)}
+                                                        className="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg text-sm font-bold"
+                                                    >
+                                                        {app.recruiterWorkTest?.prompt ? 'Update Work Test' : 'Assign Work Test'}
+                                                    </button>
+
+                                                    {app.recruiterWorkTest?.candidateResponse && (
+                                                        <div className="space-y-3 mt-3">
+                                                            <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+                                                                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Candidate Response</p>
+                                                                <p className="text-sm text-slate-300 whitespace-pre-wrap">{app.recruiterWorkTest.candidateResponse}</p>
+                                                            </div>
+                                                            <textarea
+                                                                rows={2}
+                                                                placeholder="Feedback (optional)"
+                                                                className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-sm"
+                                                                value={feedbackDrafts[app._id] || ''}
+                                                                onChange={(e) =>
+                                                                    setFeedbackDrafts((prev) => ({ ...prev, [app._id]: e.target.value }))
+                                                                }
+                                                            />
+                                                            <div className="flex gap-2">
+                                                                <button
+                                                                    onClick={() => reviewWorkTest(app._id, 'passed')}
+                                                                    className="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-lg text-sm font-bold"
+                                                                >
+                                                                    Mark Test Passed
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => reviewWorkTest(app._id, 'failed')}
+                                                                    className="bg-red-600 hover:bg-red-500 px-4 py-2 rounded-lg text-sm font-bold"
+                                                                >
+                                                                    Mark Test Failed
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
 
                                         <div className="bg-slate-800/30 p-6 rounded-2xl border border-slate-800">
@@ -224,10 +320,10 @@ const JobApplications = () => {
                                                 <div className="text-center py-8">
                                                     <Shield className="w-12 h-12 text-slate-700 mx-auto mb-4" />
                                                     <p className="text-slate-600 text-sm">Identity is hidden.</p>
-                                                    {app.status === 'shortlisted' ? (
-                                                        <p className="text-xs text-blue-500 mt-2">Ready to reveal!</p>
+                                                    {app.status === 'accepted' ? (
+                                                        <p className="text-xs text-blue-500 mt-2">Accepted. Ready to reveal.</p>
                                                     ) : (
-                                                        <p className="text-xs text-slate-700 mt-2">Shortlist to unlock.</p>
+                                                        <p className="text-xs text-slate-700 mt-2">Reveal unlocked only after acceptance.</p>
                                                     )}
                                                 </div>
                                             )}

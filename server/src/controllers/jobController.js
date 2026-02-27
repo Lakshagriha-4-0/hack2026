@@ -5,21 +5,46 @@ const cache = require('../utils/responseCache');
 // @route   POST /api/jobs
 // @access  Private/Recruiter
 const createJob = async (req, res) => {
-    const { title, description, requiredSkills, experienceLevel, location, salaryRange } = req.body;
+    try {
+        const { title, description, requiredSkills, experienceLevel, location, salaryRange } = req.body;
 
-    const job = new Job({
-        recruiterId: req.user._id,
-        title,
-        description,
-        requiredSkills,
-        experienceLevel,
-        location,
-        salaryRange,
-    });
+        const normalizedSkills = Array.isArray(requiredSkills)
+            ? requiredSkills.map((s) => String(s || '').trim()).filter(Boolean)
+            : String(requiredSkills || '')
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean);
 
-    const createdJob = await job.save();
-    cache.clearByPrefix('jobs:');
-    res.status(201).json(createdJob);
+        if (!req.user?._id) {
+            return res.status(401).json({ message: 'Not authorized' });
+        }
+
+        if (!title || !description || !normalizedSkills.length) {
+            return res.status(400).json({
+                message: 'Title, description and at least one required skill are mandatory',
+            });
+        }
+
+        const job = new Job({
+            recruiterId: req.user._id,
+            title,
+            description,
+            requiredSkills: normalizedSkills,
+            experienceLevel,
+            location,
+            salaryRange,
+        });
+
+        const createdJob = await job.save();
+        cache.clearByPrefix('jobs:');
+        return res.status(201).json(createdJob);
+    } catch (error) {
+        if (error?.name === 'ValidationError') {
+            const firstIssue = Object.values(error.errors || {})[0]?.message;
+            return res.status(400).json({ message: firstIssue || 'Invalid job data' });
+        }
+        return res.status(500).json({ message: 'Failed to create job' });
+    }
 };
 
 // @desc    Get all jobs

@@ -13,7 +13,10 @@ const JobsList = () => {
     useEffect(() => {
         const fetchJobs = async () => {
             try {
-                const { data } = await api.get('/jobs');
+                const isCandidate =
+                    localStorage.getItem('userRole') === 'candidate' &&
+                    Boolean(localStorage.getItem('token'));
+                const { data } = await api.get(isCandidate ? '/candidate/jobs/suitable' : '/jobs');
                 setJobs(data);
             } catch (err) {
                 setError(err.response?.data?.message || 'Failed to load jobs');
@@ -91,6 +94,11 @@ const JobsList = () => {
                                         <div className="mb-6">
                                             <h3 className="text-2xl font-black mb-2 group-hover:text-blue-400 transition-colors leading-tight">{job.title}</h3>
                                             <p className="text-slate-500 font-bold uppercase text-[10px] tracking-[0.2em]">{job.recruiterId?.name || 'Vetted Company'}</p>
+                                            {typeof job.matchScore === 'number' && (
+                                                <p className="mt-2 text-emerald-400 text-xs font-extrabold uppercase tracking-[0.2em]">
+                                                    {job.matchScore}% skill match
+                                                </p>
+                                            )}
                                         </div>
 
                                         <p className="text-slate-400 text-sm mb-6 line-clamp-3 font-medium leading-relaxed">

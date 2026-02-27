@@ -12,6 +12,10 @@ const JobDetails = () => {
     const [applied, setApplied] = useState(false);
     const [error, setError] = useState('');
     const [applying, setApplying] = useState(false);
+    const [eligibility, setEligibility] = useState(null);
+    const [eligibilityAnswers, setEligibilityAnswers] = useState({});
+    const [eligibilityLoading, setEligibilityLoading] = useState(false);
+    const [eligibilityMessage, setEligibilityMessage] = useState('');
 
     useEffect(() => {
         const fetchJob = async () => {
@@ -28,6 +32,15 @@ const JobDetails = () => {
                     } catch (_ignored) {
                         // Ignore background application check failures.
                     }
+
+                    if (localStorage.getItem('userRole') === 'candidate') {
+                        try {
+                            const { data: eligibilityData } = await api.get(`/candidate/eligibility/${id}`);
+                            setEligibility(eligibilityData);
+                        } catch (_ignored) {
+                            // test not started yet
+                        }
+                    }
                 }
             } catch (err) {
                 setError(err.response?.data?.message || 'Failed to load job');
@@ -37,6 +50,51 @@ const JobDetails = () => {
         };
         fetchJob();
     }, [id]);
+
+    const startEligibility = async () => {
+        setEligibilityLoading(true);
+        setEligibilityMessage('');
+        try {
+            const { data } = await api.post(`/candidate/eligibility/${id}/start`);
+            setEligibility(data);
+            setEligibilityAnswers({});
+        } catch (err) {
+            setEligibilityMessage(err.response?.data?.message || 'Failed to start eligibility test');
+        } finally {
+            setEligibilityLoading(false);
+        }
+    };
+
+    const submitEligibility = async () => {
+        if (!eligibility?.questions?.length) return;
+        const answers = eligibility.questions.map((q) => ({
+            questionId: q.questionId,
+            answer: eligibilityAnswers[q.questionId] || '',
+        }));
+        if (answers.some((a) => !a.answer)) {
+            setEligibilityMessage('Please answer all questions before submitting.');
+            return;
+        }
+
+        setEligibilityLoading(true);
+        setEligibilityMessage('');
+        try {
+            const { data } = await api.post(`/candidate/eligibility/${id}/submit`, { answers });
+            setEligibility((prev) => ({
+                ...prev,
+                status: data.status,
+                score: data.score,
+                passScore: data.passScore,
+                questions: undefined,
+                submittedAt: new Date().toISOString(),
+            }));
+            setEligibilityMessage(data.message);
+        } catch (err) {
+            setEligibilityMessage(err.response?.data?.message || 'Failed to submit eligibility test');
+        } finally {
+            setEligibilityLoading(false);
+        }
+    };
 
     const handleApply = async () => {
         setApplying(true);
@@ -159,13 +217,81 @@ const JobDetails = () => {
 
                             {!applied ? (
                                 <>
-                                    <button
-                                        onClick={handleApply}
-                                        disabled={applying}
-                                        className="w-full btn-primary h-16 text-lg tracking-tight font-black shadow-[0_10px_30px_rgba(37,99,235,0.3)] disabled:opacity-70 disabled:cursor-not-allowed"
-                                    >
-                                        {applying ? 'Applying...' : 'Apply Anonymously'}
-                                    </button>
+                                    {localStorage.getItem('token') && localStorage.getItem('userRole') === 'candidate' ? (
+                                        <div className="space-y-4">
+                                            {eligibility?.status === 'passed' ? (
+                                                <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-4 text-sm text-emerald-300">
+                                                    Eligibility test passed ({eligibility.score}%).
+                                                </div>
+                                            ) : eligibility?.status === 'failed' ? (
+                                                <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-sm text-red-300">
+                                                    Eligibility test failed ({eligibility.score}% / {eligibility.passScore}%).
+                                                </div>
+                                            ) : null}
+
+                                            {eligibility?.questions?.length ? (
+                                                <div className="space-y-4 bg-slate-900/40 border border-slate-800 rounded-2xl p-4 max-h-[340px] overflow-auto">
+                                                    {eligibility.questions.map((q, idx) => (
+                                                        <div key={q.questionId} className="space-y-2">
+                                                            <p className="text-sm font-semibold text-slate-300">{idx + 1}. {q.question}</p>
+                                                            <div className="space-y-1">
+                                                                {q.options.map((opt) => (
+                                                                    <label key={opt} className="flex items-center gap-2 text-xs text-slate-400">
+                                                                        <input
+                                                                            type="radio"
+                                                                            name={q.questionId}
+                                                                            value={opt}
+                                                                            checked={eligibilityAnswers[q.questionId] === opt}
+                                                                            onChange={(e) =>
+                                                                                setEligibilityAnswers((prev) => ({ ...prev, [q.questionId]: e.target.value }))
+                                                                            }
+                                                                        />
+                                                                        {opt}
+                                                                    </label>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                    <button
+                                                        onClick={submitEligibility}
+                                                        disabled={eligibilityLoading}
+                                                        className="w-full btn-secondary h-12 border-blue-500/30 hover:border-blue-500/50"
+                                                    >
+                                                        {eligibilityLoading ? 'Submitting Test...' : 'Submit Eligibility Test'}
+                                                    </button>
+                                                </div>
+                                            ) : eligibility?.status !== 'passed' ? (
+                                                <button
+                                                    onClick={startEligibility}
+                                                    disabled={eligibilityLoading}
+                                                    className="w-full btn-secondary h-12 border-blue-500/30 hover:border-blue-500/50"
+                                                >
+                                                    {eligibilityLoading ? 'Generating Test...' : 'Start AI Eligibility Test'}
+                                                </button>
+                                            ) : null}
+
+                                            <button
+                                                onClick={handleApply}
+                                                disabled={applying || eligibility?.status !== 'passed'}
+                                                className="w-full btn-primary h-16 text-lg tracking-tight font-black shadow-[0_10px_30px_rgba(37,99,235,0.3)] disabled:opacity-70 disabled:cursor-not-allowed"
+                                            >
+                                                {applying ? 'Applying...' : 'Apply Anonymously'}
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <button
+                                            onClick={handleApply}
+                                            disabled={applying}
+                                            className="w-full btn-primary h-16 text-lg tracking-tight font-black shadow-[0_10px_30px_rgba(37,99,235,0.3)] disabled:opacity-70 disabled:cursor-not-allowed"
+                                        >
+                                            {applying ? 'Applying...' : 'Apply Anonymously'}
+                                        </button>
+                                    )}
+                                    {eligibilityMessage && (
+                                        <div className="mt-2 bg-slate-900 border border-slate-800 text-slate-300 rounded-2xl p-3 text-xs">
+                                            {eligibilityMessage}
+                                        </div>
+                                    )}
                                     {error && (
                                         <div className="mt-4 bg-red-500/10 border border-red-500/30 text-red-300 rounded-2xl p-4 text-sm">
                                             {error}

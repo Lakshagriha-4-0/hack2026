@@ -9,6 +9,7 @@ const RecruiterDashboard = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [showCreate, setShowCreate] = useState(false);
+    const [createError, setCreateError] = useState('');
     const [newJob, setNewJob] = useState({
         title: '',
         description: '',
@@ -36,13 +37,14 @@ const RecruiterDashboard = () => {
     const handleCreateJob = async (e) => {
         e.preventDefault();
         try {
+            setCreateError('');
             const skillsArray = newJob.requiredSkills.split(',').map(s => s.trim()).filter(s => s);
             await api.post('/jobs', { ...newJob, requiredSkills: skillsArray });
             setShowCreate(false);
             setNewJob({ title: '', description: '', requiredSkills: '', location: '', salaryRange: '' });
             fetchMyJobs();
         } catch (err) {
-            console.error(err);
+            setCreateError(err.response?.data?.message || 'Failed to create job');
         }
     };
 
@@ -68,6 +70,11 @@ const RecruiterDashboard = () => {
                         <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl rounded-3xl p-8 shadow-2xl">
                             <h2 className="text-2xl font-bold mb-6">Create Job Posting</h2>
                             <form onSubmit={handleCreateJob} className="space-y-4">
+                                {createError && (
+                                    <div className="bg-red-500/10 border border-red-500/30 text-red-300 p-3 rounded-xl text-sm">
+                                        {createError}
+                                    </div>
+                                )}
                                 <div>
                                     <label className="block text-sm text-slate-500 mb-1">Job Title</label>
                                     <input
