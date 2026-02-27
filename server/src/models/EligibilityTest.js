@@ -53,6 +53,18 @@ const eligibilityTestSchema = mongoose.Schema(
             default: 'fallback',
         },
         submittedAt: Date,
+        companyRound: {
+            questions: { type: [questionSchema], default: [] },
+            passScore: { type: Number, default: 60, min: 0, max: 100 },
+            score: { type: Number, default: 0, min: 0, max: 100 },
+            status: {
+                type: String,
+                enum: ['pending', 'passed', 'failed'],
+                default: 'pending',
+            },
+            answers: { type: [answerSchema], default: [] },
+            submittedAt: Date,
+        },
     },
     { timestamps: true }
 );

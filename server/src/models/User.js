@@ -112,6 +112,15 @@ const userSchema = mongoose.Schema(
         },
       },
     },
+    recruiterProfile: {
+      companyName: { type: String, trim: true, default: "" },
+      designation: { type: String, trim: true, default: "" },
+      phone: { type: String, trim: true, default: "" },
+      website: { type: String, trim: true, default: "" },
+      linkedin: { type: String, trim: true, default: "" },
+      location: { type: String, trim: true, default: "" },
+      about: { type: String, trim: true, default: "" },
+    },
   },
   {
     timestamps: true,

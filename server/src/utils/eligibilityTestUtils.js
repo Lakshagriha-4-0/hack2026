@@ -70,7 +70,7 @@ Rules:
 
     const url =
         `https://generativelanguage.googleapis.com/v1beta/models/` +
-        `gemini-1.5-flash:generateContent?key=${key}`;
+        `gemini-2.5-flash:generateContent?key=${key}`;
 
     const resp = await axios.post(
         url,
@@ -128,6 +128,22 @@ const generateEligibilityQuestions = async (job) => {
     };
 };
 
+const generateRecruiterRoundQuestions = async (job) => {
+    try {
+        const aiQuestions = await generateQuestionsWithGemini(job);
+        if (aiQuestions) {
+            return { generatedBy: 'ai', questions: aiQuestions };
+        }
+    } catch (error) {
+        logger.wrn('recruiter.test.generate.ai.fail', { e: error.message });
+    }
+
+    return {
+        generatedBy: 'manual',
+        questions: fallbackGenerateQuestions(job?.title, job?.requiredSkills),
+    };
+};
+
 const evaluateAnswers = (questions = [], submittedAnswers = []) => {
     const answerMap = new Map(
         (submittedAnswers || []).map((item) => [String(item?.questionId || ''), String(item?.answer || '').trim()])
@@ -152,5 +168,6 @@ const evaluateAnswers = (questions = [], submittedAnswers = []) => {
 
 module.exports = {
     generateEligibilityQuestions,
+    generateRecruiterRoundQuestions,
     evaluateAnswers,
 };

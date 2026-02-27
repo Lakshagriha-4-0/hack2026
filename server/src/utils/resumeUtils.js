@@ -188,7 +188,7 @@ ${text.slice(0, 12000)}
 
   const url =
     `https://generativelanguage.googleapis.com/v1beta/models/` +
-    `gemini-1.5-flash:generateContent?key=${key}`;
+    `gemini-2.5-flash:generateContent?key=${key}`;
 
   const resp = await axios.post(
     url,
@@ -348,7 +348,7 @@ ${text.slice(0, 10000)}
 
   const url =
     `https://generativelanguage.googleapis.com/v1beta/models/` +
-    `gemini-1.5-flash:generateContent?key=${key}`;
+    `gemini-2.5-flash:generateContent?key=${key}`;
 
   try {
     const resp = await axios.post(

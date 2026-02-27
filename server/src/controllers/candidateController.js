@@ -168,17 +168,17 @@ const uploadResume = async (req, res) => {
 
         const nextPersonal = {
             ...existingPersonal,
-            fullName: existingPersonal.fullName || extracted.personal.fullName || user.name,
-            email: existingPersonal.email || extracted.personal.email || user.email,
-            phone: existingPersonal.phone || extracted.personal.phone || '',
-            gender: existingPersonal.gender || extracted.personal.gender || '',
-            college: existingPersonal.college || extracted.personal.college || '',
-            address: existingPersonal.address || extracted.personal.address || '',
-            bio: existingPersonal.bio || extracted.personal.bio || '',
-            githubLink: existingPersonal.githubLink || extracted.personal.githubLink || '',
-            linkedinLink: existingPersonal.linkedinLink || extracted.personal.linkedinLink || '',
-            currentRole: existingPersonal.currentRole || extracted.personal.currentRole || '',
-            currentCompany: existingPersonal.currentCompany || extracted.personal.currentCompany || '',
+            fullName: extracted.personal.fullName || existingPersonal.fullName || user.name,
+            email: extracted.personal.email || existingPersonal.email || user.email,
+            phone: extracted.personal.phone || existingPersonal.phone || '',
+            gender: extracted.personal.gender || existingPersonal.gender || '',
+            college: extracted.personal.college || existingPersonal.college || '',
+            address: extracted.personal.address || existingPersonal.address || '',
+            bio: extracted.personal.bio || existingPersonal.bio || '',
+            githubLink: extracted.personal.githubLink || existingPersonal.githubLink || '',
+            linkedinLink: extracted.personal.linkedinLink || existingPersonal.linkedinLink || '',
+            currentRole: extracted.personal.currentRole || existingPersonal.currentRole || '',
+            currentCompany: extracted.personal.currentCompany || existingPersonal.currentCompany || '',
             resumeOriginal: {
                 fileName: req.file.originalname,
                 storagePath: req.file.path || '',
@@ -199,13 +199,13 @@ const uploadResume = async (req, res) => {
         const nextPublic = {
             ...existingPublic,
             skills: mergedSkills,
-            experienceYears: existingPublic.experienceYears || extracted.public.experienceYears || 0,
-            tagline: existingPublic.tagline || extracted.public.tagline || '',
+            experienceYears: extracted.public.experienceYears || existingPublic.experienceYears || 0,
+            tagline: extracted.public.tagline || existingPublic.tagline || '',
             projects: mergedProjects,
             education: mergedEducation,
             experience: mergedExperience,
-            portfolioLink: existingPublic.portfolioLink || extracted.public.portfolioLink || '',
-            city: existingPublic.city || extracted.public.city || '',
+            portfolioLink: extracted.public.portfolioLink || existingPublic.portfolioLink || '',
+            city: extracted.public.city || existingPublic.city || '',
             resumeAnonymized: {
                 text: previewText,
                 updatedAt: new Date(),
@@ -339,6 +339,41 @@ const getOrCreateCandidatePublicId = async (user) => {
     return user.candidatePublicId;
 };
 
+const createApplicationRecord = async ({ job, user }) => {
+    const candidatePublicProfile = user?.candidateProfile?.public || {};
+    const candidatePersonalProfile = user?.candidateProfile?.personal || {};
+    const candidateSkills = Array.isArray(candidatePublicProfile.skills) ? candidatePublicProfile.skills : [];
+
+    const { score, matchedSkills, missingSkills } = calcMatchScore(job.requiredSkills, candidateSkills);
+    const candidatePublicId = user.candidatePublicId || (await getOrCreateCandidatePublicId(user));
+
+    const application = new Application({
+        jobId: job._id,
+        recruiterId: job.recruiterId,
+        candidateId: user._id,
+        anonymousId: candidatePublicId,
+        candidatePublicId,
+        matchScore: score,
+        matchedSkills,
+        missingSkills,
+        status: 'shortlisted',
+        displayProfile: {
+            skills: candidatePublicProfile.skills || [],
+            experienceYears: candidatePublicProfile.experienceYears || 0,
+            projects: candidatePublicProfile.projects || [],
+            education: candidatePublicProfile.education || [],
+            experience: candidatePublicProfile.experience || [],
+            portfolioLink: candidatePublicProfile.portfolioLink || '',
+            city: candidatePublicProfile.city || '',
+            tagline: candidatePublicProfile.tagline || '',
+            resumeAnonymizedText: candidatePublicProfile?.resumeAnonymized?.text || '',
+        },
+        privateProfile: candidatePersonalProfile,
+    });
+
+    return application.save();
+};
+
 // @desc    Get jobs suitable for candidate skills
 // @route   GET /api/candidate/jobs/suitable
 // @access  Private/Candidate
@@ -347,10 +382,6 @@ const getSuitableJobs = async (req, res) => {
     const candidateSkills = Array.isArray(user?.candidateProfile?.public?.skills)
         ? user.candidateProfile.public.skills
         : [];
-
-    if (!candidateSkills.length) {
-        return res.json([]);
-    }
 
     const jobs = await Job.find({})
         .select('recruiterId title description requiredSkills experienceLevel location salaryRange createdAt')
@@ -367,7 +398,6 @@ const getSuitableJobs = async (req, res) => {
                 missingSkills,
             };
         })
-        .filter((job) => job.matchScore > 0)
         .sort((a, b) => b.matchScore - a.matchScore);
 
     res.json(suitedJobs);
@@ -487,6 +517,144 @@ const submitEligibilityTest = async (req, res) => {
     });
 };
 
+// @desc    Get recruiter company test for a job (after eligibility pass)
+// @route   GET /api/candidate/company-test/:jobId
+// @access  Private/Candidate
+const getCompanyTest = async (req, res) => {
+    const job = await Job.findById(req.params.jobId)
+        .select('recruiterTest requiredSkills title recruiterId')
+        .lean();
+    if (!job) {
+        return res.status(404).json({ message: 'Job not found' });
+    }
+
+    const alreadyApplied = await Application.findOne({
+        jobId: job._id,
+        candidateId: req.user._id,
+    }).lean();
+    if (alreadyApplied) {
+        return res.json({
+            status: 'passed',
+            score: 100,
+            passScore: 100,
+            message: 'You already passed all tests and your profile is shared with recruiter.',
+        });
+    }
+
+    const eligibility = await EligibilityTest.findOne({
+        candidateId: req.user._id,
+        jobId: job._id,
+    });
+    if (!eligibility || eligibility.status !== 'passed') {
+        return res.status(403).json({ message: 'Pass the first eligibility test before attempting company test' });
+    }
+
+    const sourceQuestions = Array.isArray(job?.recruiterTest?.questions) ? job.recruiterTest.questions : [];
+    if (!sourceQuestions.length) {
+        return res.status(400).json({ message: 'Company test is not configured for this job' });
+    }
+
+    const currentRound = eligibility.companyRound || {};
+    if (!Array.isArray(currentRound.questions) || !currentRound.questions.length) {
+        eligibility.companyRound = {
+            questions: sourceQuestions.map((q) => ({
+                questionId: q.questionId,
+                question: q.question,
+                options: q.options || [],
+                correctAnswer: q.correctAnswer,
+            })),
+            passScore: Number(job.recruiterTest?.passScore || 60),
+            score: 0,
+            status: 'pending',
+            answers: [],
+            submittedAt: null,
+        };
+        await eligibility.save();
+    }
+
+    res.json({
+        status: eligibility.companyRound.status,
+        score: eligibility.companyRound.score,
+        passScore: eligibility.companyRound.passScore,
+        questions:
+            eligibility.companyRound.status === 'pending'
+                ? eligibility.companyRound.questions.map((q) => ({
+                    questionId: q.questionId,
+                    question: q.question,
+                    options: q.options,
+                }))
+                : undefined,
+        submittedAt: eligibility.companyRound.submittedAt,
+    });
+};
+
+// @desc    Submit company test; share candidate with recruiter only if passed
+// @route   POST /api/candidate/company-test/:jobId/submit
+// @access  Private/Candidate
+const submitCompanyTest = async (req, res) => {
+    const { answers } = req.body;
+    if (!Array.isArray(answers) || !answers.length) {
+        return res.status(400).json({ message: 'Answers are required' });
+    }
+
+    const job = await Job.findById(req.params.jobId).select('recruiterId requiredSkills recruiterTest').lean();
+    if (!job) {
+        return res.status(404).json({ message: 'Job not found' });
+    }
+
+    const eligibility = await EligibilityTest.findOne({
+        candidateId: req.user._id,
+        jobId: job._id,
+    });
+    if (!eligibility || eligibility.status !== 'passed') {
+        return res.status(403).json({ message: 'Pass the first eligibility test before attempting company test' });
+    }
+
+    const round = eligibility.companyRound || {};
+    if (!Array.isArray(round.questions) || !round.questions.length) {
+        return res.status(400).json({ message: 'Company test not initialized. Open company test first.' });
+    }
+
+    const { score } = evaluateAnswers(round.questions, answers);
+    const passed = score >= (round.passScore || 60);
+
+    eligibility.companyRound.answers = answers
+        .map((a) => ({
+            questionId: String(a?.questionId || '').trim(),
+            answer: String(a?.answer || '').trim(),
+        }))
+        .filter((a) => a.questionId && a.answer);
+    eligibility.companyRound.score = score;
+    eligibility.companyRound.status = passed ? 'passed' : 'failed';
+    eligibility.companyRound.submittedAt = new Date();
+    await eligibility.save();
+
+    if (!passed) {
+        return res.json({
+            status: 'failed',
+            score,
+            passScore: round.passScore || 60,
+            message: 'Company test not passed. Your profile was not shared with recruiter.',
+        });
+    }
+
+    const existingApplication = await Application.findOne({
+        jobId: job._id,
+        candidateId: req.user._id,
+    }).lean();
+    if (!existingApplication) {
+        const user = await User.findById(req.user._id);
+        await createApplicationRecord({ job, user });
+    }
+
+    return res.json({
+        status: 'passed',
+        score,
+        passScore: round.passScore || 60,
+        message: 'Company test passed. Your profile is now shared with recruiter.',
+    });
+};
+
 // @desc    Apply to a job
 // @route   POST /api/jobs/:jobId/apply
 // @access  Private/Candidate
@@ -512,49 +680,12 @@ const applyToJob = async (req, res) => {
         candidateId: req.user._id,
         jobId: job._id,
     }).lean();
-    if (!eligibility || eligibility.status !== 'passed') {
+    if (!eligibility || eligibility.status !== 'passed' || eligibility?.companyRound?.status !== 'passed') {
         res.status(403);
-        throw new Error('You must pass the eligibility test before applying');
+        throw new Error('You must pass both tests before your profile is shared with recruiter');
     }
-
     const user = await User.findById(req.user._id);
-    const candidatePublicProfile = user?.candidateProfile?.public || {};
-    const candidatePersonalProfile = user?.candidateProfile?.personal || {};
-
-    const candidateSkills = Array.isArray(candidatePublicProfile.skills)
-        ? candidatePublicProfile.skills
-        : [];
-
-    const { score, matchedSkills, missingSkills } = calcMatchScore(
-        job.requiredSkills,
-        candidateSkills
-    );
-
-    const candidatePublicId = user.candidatePublicId || (await getOrCreateCandidatePublicId(user));
-    const application = new Application({
-        jobId: job._id,
-        recruiterId: job.recruiterId,
-        candidateId: user._id,
-        anonymousId: candidatePublicId,
-        candidatePublicId,
-        matchScore: score,
-        matchedSkills,
-        missingSkills,
-        displayProfile: {
-            skills: candidatePublicProfile.skills || [],
-            experienceYears: candidatePublicProfile.experienceYears || 0,
-            projects: candidatePublicProfile.projects || [],
-            education: candidatePublicProfile.education || [],
-            experience: candidatePublicProfile.experience || [],
-            portfolioLink: candidatePublicProfile.portfolioLink || '',
-            city: candidatePublicProfile.city || '',
-            tagline: candidatePublicProfile.tagline || '',
-            resumeAnonymizedText: candidatePublicProfile?.resumeAnonymized?.text || '',
-        },
-        privateProfile: candidatePersonalProfile,
-    });
-
-    const createdApplication = await application.save();
+    const createdApplication = await createApplicationRecord({ job, user });
     res.status(201).json(createdApplication);
 };
 
@@ -563,7 +694,7 @@ const applyToJob = async (req, res) => {
 // @access  Private/Candidate
 const getMyApplications = async (req, res) => {
     const applications = await Application.find({ candidateId: req.user._id })
-        .select('jobId status createdAt matchScore recruiterWorkTest')
+        .select('jobId status createdAt matchScore')
         .populate({ path: 'jobId', select: 'title description location', options: { lean: true } })
         .sort('-createdAt')
         .lean();
@@ -578,7 +709,7 @@ const getMyWorkTest = async (req, res) => {
         _id: req.params.appId,
         candidateId: req.user._id,
     })
-        .select('jobId status recruiterWorkTest')
+        .select('jobId status recruiterRoundTest')
         .populate({ path: 'jobId', select: 'title', options: { lean: true } })
         .lean();
 
@@ -586,8 +717,8 @@ const getMyWorkTest = async (req, res) => {
         return res.status(404).json({ message: 'Application not found' });
     }
 
-    const workTest = application.recruiterWorkTest || {};
-    if (!workTest.prompt) {
+    const workTest = application.recruiterRoundTest || {};
+    if (!Array.isArray(workTest.questions) || !workTest.questions.length) {
         return res.status(404).json({ message: 'Recruiter work test is not assigned yet' });
     }
 
@@ -595,11 +726,18 @@ const getMyWorkTest = async (req, res) => {
         applicationId: application._id,
         job: application.jobId,
         status: application.status,
-        reviewStatus: workTest.reviewStatus,
-        prompt: workTest.prompt,
-        assignedAt: workTest.assignedAt,
+        reviewStatus: workTest.status,
+        score: workTest.score,
+        passScore: workTest.passScore,
+        questions:
+            workTest.status === 'pending'
+                ? workTest.questions.map((q) => ({
+                    questionId: q.questionId,
+                    question: q.question,
+                    options: q.options,
+                }))
+                : undefined,
         submittedAt: workTest.submittedAt,
-        recruiterFeedback: workTest.recruiterFeedback || '',
     });
 };
 
@@ -607,9 +745,9 @@ const getMyWorkTest = async (req, res) => {
 // @route   POST /api/candidate/applications/:appId/work-test/submit
 // @access  Private/Candidate
 const submitMyWorkTest = async (req, res) => {
-    const { responseText } = req.body;
-    if (!String(responseText || '').trim()) {
-        return res.status(400).json({ message: 'Response text is required' });
+    const { answers } = req.body;
+    if (!Array.isArray(answers) || !answers.length) {
+        return res.status(400).json({ message: 'Answers are required' });
     }
 
     const application = await Application.findOne({
@@ -620,19 +758,34 @@ const submitMyWorkTest = async (req, res) => {
         return res.status(404).json({ message: 'Application not found' });
     }
 
-    if (!application.recruiterWorkTest?.prompt) {
+    if (!Array.isArray(application.recruiterRoundTest?.questions) || !application.recruiterRoundTest.questions.length) {
         return res.status(400).json({ message: 'Recruiter work test is not assigned yet' });
     }
 
-    application.recruiterWorkTest.candidateResponse = String(responseText).trim();
-    application.recruiterWorkTest.submittedAt = new Date();
-    application.recruiterWorkTest.reviewStatus = 'submitted';
+    const { score } = evaluateAnswers(application.recruiterRoundTest.questions, answers);
+    const passed = score >= (application.recruiterRoundTest.passScore || 60);
+
+    application.recruiterRoundTest.answers = answers
+        .map((a) => ({
+            questionId: String(a?.questionId || '').trim(),
+            answer: String(a?.answer || '').trim(),
+        }))
+        .filter((a) => a.questionId && a.answer);
+    application.recruiterRoundTest.score = score;
+    application.recruiterRoundTest.status = passed ? 'passed' : 'failed';
+    application.recruiterRoundTest.submittedAt = new Date();
+    application.status = passed ? 'shortlisted' : 'rejected';
     await application.save();
 
     res.json({
-        message: 'Work test submitted successfully',
-        reviewStatus: application.recruiterWorkTest.reviewStatus,
-        submittedAt: application.recruiterWorkTest.submittedAt,
+        message: passed
+            ? 'Recruiter round test passed. You are shortlisted automatically.'
+            : 'Recruiter round test not passed. Application rejected automatically.',
+        reviewStatus: application.recruiterRoundTest.status,
+        score: application.recruiterRoundTest.score,
+        passScore: application.recruiterRoundTest.passScore,
+        status: application.status,
+        submittedAt: application.recruiterRoundTest.submittedAt,
     });
 };
 
@@ -716,17 +869,17 @@ const autoFillProfile = async (req, res) => {
 
         const nextPersonal = {
             ...existingPersonal,
-            fullName: existingPersonal.fullName || extracted.personal.fullName || user.name,
-            email: existingPersonal.email || extracted.personal.email || user.email,
-            phone: existingPersonal.phone || extracted.personal.phone || '',
-            gender: existingPersonal.gender || extracted.personal.gender || '',
-            college: existingPersonal.college || extracted.personal.college || '',
-            address: existingPersonal.address || extracted.personal.address || '',
-            bio: existingPersonal.bio || extracted.personal.bio || '',
-            githubLink: existingPersonal.githubLink || extracted.personal.githubLink || '',
-            linkedinLink: existingPersonal.linkedinLink || extracted.personal.linkedinLink || '',
-            currentRole: existingPersonal.currentRole || extracted.personal.currentRole || '',
-            currentCompany: existingPersonal.currentCompany || extracted.personal.currentCompany || '',
+            fullName: extracted.personal.fullName || existingPersonal.fullName || user.name,
+            email: extracted.personal.email || existingPersonal.email || user.email,
+            phone: extracted.personal.phone || existingPersonal.phone || '',
+            gender: extracted.personal.gender || existingPersonal.gender || '',
+            college: extracted.personal.college || existingPersonal.college || '',
+            address: extracted.personal.address || existingPersonal.address || '',
+            bio: extracted.personal.bio || existingPersonal.bio || '',
+            githubLink: extracted.personal.githubLink || existingPersonal.githubLink || '',
+            linkedinLink: extracted.personal.linkedinLink || existingPersonal.linkedinLink || '',
+            currentRole: extracted.personal.currentRole || existingPersonal.currentRole || '',
+            currentCompany: extracted.personal.currentCompany || existingPersonal.currentCompany || '',
         };
 
         const previewText = await buildBiasResumePreview({
@@ -739,13 +892,13 @@ const autoFillProfile = async (req, res) => {
         const nextPublic = {
             ...existingPublic,
             skills: mergedSkills,
-            experienceYears: existingPublic.experienceYears || extracted.public.experienceYears || 0,
-            tagline: existingPublic.tagline || extracted.public.tagline || '',
+            experienceYears: extracted.public.experienceYears || existingPublic.experienceYears || 0,
+            tagline: extracted.public.tagline || existingPublic.tagline || '',
             projects: mergedProjects,
             education: mergedEducation,
             experience: mergedExperience,
-            portfolioLink: existingPublic.portfolioLink || extracted.public.portfolioLink || '',
-            city: existingPublic.city || extracted.public.city || '',
+            portfolioLink: extracted.public.portfolioLink || existingPublic.portfolioLink || '',
+            city: extracted.public.city || existingPublic.city || '',
             resumeAnonymized: {
                 text: previewText,
                 updatedAt: new Date(),
@@ -776,6 +929,8 @@ module.exports = {
     startEligibilityTest,
     getEligibilityStatus,
     submitEligibilityTest,
+    getCompanyTest,
+    submitCompanyTest,
     applyToJob,
     getMyApplications,
     getMyWorkTest,

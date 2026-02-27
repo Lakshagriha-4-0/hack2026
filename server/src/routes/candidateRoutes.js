@@ -9,6 +9,8 @@ const {
     startEligibilityTest,
     getEligibilityStatus,
     submitEligibilityTest,
+    getCompanyTest,
+    submitCompanyTest,
     applyToJob,
     getMyApplications,
     getMyWorkTest,
@@ -28,6 +30,8 @@ router.get('/jobs/suitable', protect, authorize('candidate'), getSuitableJobs);
 router.post('/eligibility/:jobId/start', protect, authorize('candidate'), startEligibilityTest);
 router.get('/eligibility/:jobId', protect, authorize('candidate'), getEligibilityStatus);
 router.post('/eligibility/:jobId/submit', protect, authorize('candidate'), submitEligibilityTest);
+router.get('/company-test/:jobId', protect, authorize('candidate'), getCompanyTest);
+router.post('/company-test/:jobId/submit', protect, authorize('candidate'), submitCompanyTest);
 router.get('/applications', protect, authorize('candidate'), getMyApplications);
 router.get('/applications/:appId/work-test', protect, authorize('candidate'), getMyWorkTest);
 router.post('/applications/:appId/work-test/submit', protect, authorize('candidate'), submitMyWorkTest);

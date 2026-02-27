@@ -56,22 +56,33 @@ const applicationSchema = mongoose.Schema(
         },
         status: {
             type: String,
-            enum: ['applied', 'shortlisted', 'accepted', 'rejected'],
+            enum: ['applied', 'shortlisted', 'rejected'],
             default: 'applied',
             index: true,
         },
-        recruiterWorkTest: {
-            prompt: { type: String, trim: true, default: '' },
-            assignedAt: Date,
-            candidateResponse: { type: String, trim: true, default: '' },
-            submittedAt: Date,
-            reviewStatus: {
+        recruiterRoundTest: {
+            questions: [
+                {
+                    questionId: { type: String, required: true, trim: true },
+                    question: { type: String, required: true, trim: true },
+                    options: { type: [String], default: [] },
+                    correctAnswer: { type: String, required: true, trim: true },
+                },
+            ],
+            passScore: { type: Number, default: 60, min: 0, max: 100 },
+            score: { type: Number, default: 0, min: 0, max: 100 },
+            status: {
                 type: String,
-                enum: ['not_assigned', 'assigned', 'submitted', 'passed', 'failed'],
-                default: 'not_assigned',
+                enum: ['pending', 'passed', 'failed'],
+                default: 'pending',
             },
-            recruiterFeedback: { type: String, trim: true, default: '' },
-            reviewedAt: Date,
+            answers: [
+                {
+                    questionId: { type: String, required: true, trim: true },
+                    answer: { type: String, required: true, trim: true },
+                },
+            ],
+            submittedAt: Date,
         },
         displayProfile: {
             skills: {

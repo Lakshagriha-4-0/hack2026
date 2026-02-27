@@ -10,6 +10,7 @@ const Login = lazy(() => import('./pages/Login'));
 const Register = lazy(() => import('./pages/Register'));
 const CandidateDashboard = lazy(() => import('./pages/CandidateDashboard'));
 const RecruiterDashboard = lazy(() => import('./pages/RecruiterDashboard'));
+const RecruiterProfile = lazy(() => import('./pages/RecruiterProfile'));
 const JobsList = lazy(() => import('./pages/JobsList'));
 const JobDetails = lazy(() => import('./pages/JobDetails'));
 const Applications = lazy(() => import('./pages/Applications'));
@@ -100,6 +101,11 @@ function App() {
                         <Route path="/recruiter" element={
                             <ProtectedRoute allowedRoles={['recruiter']}>
                                 <RecruiterDashboard />
+                            </ProtectedRoute>
+                        } />
+                        <Route path="/recruiter/profile" element={
+                            <ProtectedRoute allowedRoles={['recruiter']}>
+                                <RecruiterProfile />
                             </ProtectedRoute>
                         } />
                         <Route path="/recruiter/jobs/:jobId/applications" element={

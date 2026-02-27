@@ -84,8 +84,18 @@ const JobsList = () => {
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 relative z-10">
                         {filteredJobs.length > 0 ? (
-                            filteredJobs.map(job => (
-                                <div key={job._id} className="glass-premium rounded-[2.5rem] border-white/5 p-8 flex flex-col justify-between group hover:border-blue-500/30 transition-all duration-500 hover:shadow-[0_20px_50px_rgba(0,0,0,0.3)] relative overflow-hidden">
+                            filteredJobs.map(job => {
+                                const isStrongFit = typeof job.matchScore === 'number' ? job.matchScore >= 60 : true;
+                                return (
+                                <div
+                                    key={job._id}
+                                    title={!isStrongFit ? 'You are not perfect fit for this role.' : ''}
+                                    className={`glass-premium rounded-[2.5rem] p-8 flex flex-col justify-between group transition-all duration-500 hover:shadow-[0_20px_50px_rgba(0,0,0,0.3)] relative overflow-hidden border ${
+                                        isStrongFit
+                                            ? 'border-emerald-500/20 hover:border-emerald-500/40'
+                                            : 'border-red-500/25 hover:border-red-500/45'
+                                    }`}
+                                >
                                     <div className="absolute top-0 right-0 p-8 text-blue-500/5 group-hover:text-blue-500/10 transition-colors">
                                         <Briefcase className="w-24 h-24" />
                                     </div>
@@ -95,7 +105,7 @@ const JobsList = () => {
                                             <h3 className="text-2xl font-black mb-2 group-hover:text-blue-400 transition-colors leading-tight">{job.title}</h3>
                                             <p className="text-slate-500 font-bold uppercase text-[10px] tracking-[0.2em]">{job.recruiterId?.name || 'Vetted Company'}</p>
                                             {typeof job.matchScore === 'number' && (
-                                                <p className="mt-2 text-emerald-400 text-xs font-extrabold uppercase tracking-[0.2em]">
+                                                <p className={`mt-2 text-xs font-extrabold uppercase tracking-[0.2em] ${isStrongFit ? 'text-emerald-400' : 'text-red-400'}`}>
                                                     {job.matchScore}% skill match
                                                 </p>
                                             )}
@@ -128,15 +138,30 @@ const JobsList = () => {
                                                 {job.salaryRange || 'Vetted Salary'}
                                             </div>
                                         </div>
-                                        <Link
-                                            to={`/jobs/${job._id}`}
-                                            className="w-12 h-12 bg-slate-900 group-hover:bg-blue-600 rounded-2xl flex items-center justify-center border border-slate-800 group-hover:border-blue-500 transition-all duration-300"
-                                        >
-                                            <ChevronRight className="w-6 h-6 text-slate-500 group-hover:text-white transition-colors" />
-                                        </Link>
+                                        {isStrongFit ? (
+                                            <Link
+                                                to={`/jobs/${job._id}`}
+                                                className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center border border-slate-800 transition-all duration-300 group-hover:bg-emerald-600 group-hover:border-emerald-500"
+                                            >
+                                                <ChevronRight className="w-6 h-6 text-slate-500 group-hover:text-white transition-colors" />
+                                            </Link>
+                                        ) : (
+                                            <button
+                                                disabled
+                                                title="You are not perfect fit for this role."
+                                                className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center border border-red-500/25 opacity-60 cursor-not-allowed"
+                                            >
+                                                <ChevronRight className="w-6 h-6 text-red-400/70" />
+                                            </button>
+                                        )}
                                     </div>
+                                    {!isStrongFit && (
+                                        <div className="absolute bottom-5 left-8 right-8 opacity-0 group-hover:opacity-100 transition-opacity text-[11px] text-red-300 font-semibold">
+                                            You are not perfect fit for this role.
+                                        </div>
+                                    )}
                                 </div>
-                            ))
+                            )})
                         ) : (
                             <div className="col-span-full py-32 text-center glass-premium rounded-[3rem] border-dashed border-2 border-slate-800">
                                 <Search className="w-16 h-16 text-slate-800 mx-auto mb-6" />

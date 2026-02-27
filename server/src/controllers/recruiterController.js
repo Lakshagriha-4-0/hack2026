@@ -1,5 +1,7 @@
 const Application = require('../models/Application');
 const Job = require('../models/Job');
+const User = require('../models/User');
+const { generateRecruiterRoundQuestions } = require('../utils/eligibilityTestUtils');
 
 // @desc    Get all applications for a specific job (anonymous)
 // @route   GET /api/recruiter/jobs/:jobId/applications
@@ -18,133 +20,73 @@ const getJobApplications = async (req, res) => {
     }
 
     const applications = await Application.find({ jobId: req.params.jobId })
-        .select('-privateProfile') // Explicitly exclude private profile
+        .select('-privateProfile -recruiterRoundTest.questions.correctAnswer')
         .sort('-matchScore')
         .lean();
 
     res.json(applications);
 };
 
-// @desc    Shortlist/Reject an application
+// @desc    Manual status update disabled by workflow
 // @route   PUT /api/recruiter/applications/:appId/status
 // @access  Private/Recruiter
-const updateApplicationStatus = async (req, res) => {
-    const { status } = req.body;
-    const application = await Application.findById(req.params.appId);
-
-    if (!application) {
-        res.status(404);
-        throw new Error('Application not found');
-    }
-
-    if (application.recruiterId.toString() !== req.user._id.toString()) {
-        res.status(403);
-        throw new Error('Not authorized');
-    }
-
-    const allowedStatuses = ['shortlisted', 'rejected', 'accepted'];
-    if (!allowedStatuses.includes(status)) {
-        res.status(400);
-        throw new Error('Invalid status');
-    }
-
-    if (status === 'accepted' && application.recruiterWorkTest?.reviewStatus !== 'passed') {
-        res.status(400);
-        throw new Error('Candidate can be accepted only after passing recruiter work test');
-    }
-
-    application.status = status;
-    await application.save();
-
-    res.json(application);
-};
-
-// @desc    Assign recruiter round work test
-// @route   POST /api/recruiter/applications/:appId/work-test
-// @access  Private/Recruiter
-const assignWorkTest = async (req, res) => {
-    const { prompt } = req.body;
-    if (!String(prompt || '').trim()) {
-        res.status(400);
-        throw new Error('Work test prompt is required');
-    }
-
-    const application = await Application.findById(req.params.appId);
-    if (!application) {
-        res.status(404);
-        throw new Error('Application not found');
-    }
-
-    if (application.recruiterId.toString() !== req.user._id.toString()) {
-        res.status(403);
-        throw new Error('Not authorized');
-    }
-
-    if (application.status !== 'shortlisted') {
-        res.status(400);
-        throw new Error('Work test can be assigned only to shortlisted candidates');
-    }
-
-    application.recruiterWorkTest = {
-        prompt: String(prompt).trim(),
-        assignedAt: new Date(),
-        candidateResponse: '',
-        submittedAt: null,
-        reviewStatus: 'assigned',
-        recruiterFeedback: '',
-        reviewedAt: null,
-    };
-    await application.save();
-
-    res.json({
-        message: 'Work test assigned',
-        recruiterWorkTest: application.recruiterWorkTest,
+const updateApplicationStatus = async (_req, res) => {
+    return res.status(403).json({
+        message: 'Manual selection is disabled. Candidate status is auto-decided from recruiter test result.',
     });
 };
 
-// @desc    Review recruiter work test response
-// @route   PUT /api/recruiter/applications/:appId/work-test/review
+// @desc    Generate recruiter qualification test (AI/fallback)
+// @route   POST /api/recruiter/jobs/test/generate
 // @access  Private/Recruiter
-const reviewWorkTest = async (req, res) => {
-    const { reviewStatus, feedback } = req.body;
-    if (!['passed', 'failed'].includes(reviewStatus)) {
-        res.status(400);
-        throw new Error('Review status must be passed or failed');
+const generateJobTest = async (req, res) => {
+    const { title, requiredSkills } = req.body;
+    const safeSkills = Array.isArray(requiredSkills)
+        ? requiredSkills.map((s) => String(s || '').trim()).filter(Boolean)
+        : [];
+
+    if (!String(title || '').trim() || !safeSkills.length) {
+        return res.status(400).json({ message: 'Title and required skills are required for AI test generation' });
     }
 
-    const application = await Application.findById(req.params.appId);
-    if (!application) {
-        res.status(404);
-        throw new Error('Application not found');
+    const { questions, generatedBy } = await generateRecruiterRoundQuestions({
+        title,
+        requiredSkills: safeSkills,
+    });
+
+    return res.json({ generatedBy, questions });
+};
+
+// @desc    Update recruiter profile
+// @route   PUT /api/recruiter/profile
+// @access  Private/Recruiter
+const updateRecruiterProfile = async (req, res) => {
+    const recruiter = await User.findById(req.user._id);
+    if (!recruiter || recruiter.role !== 'recruiter') {
+        return res.status(404).json({ message: 'Recruiter not found' });
     }
 
-    if (application.recruiterId.toString() !== req.user._id.toString()) {
-        res.status(403);
-        throw new Error('Not authorized');
-    }
+    const incoming = req.body || {};
+    const current = recruiter.recruiterProfile?.toObject
+        ? recruiter.recruiterProfile.toObject()
+        : recruiter.recruiterProfile || {};
 
-    if (!application.recruiterWorkTest?.prompt) {
-        res.status(400);
-        throw new Error('Work test is not assigned');
-    }
+    recruiter.recruiterProfile = {
+        ...current,
+        companyName: String(incoming.companyName ?? current.companyName ?? '').trim(),
+        designation: String(incoming.designation ?? current.designation ?? '').trim(),
+        phone: String(incoming.phone ?? current.phone ?? '').trim(),
+        website: String(incoming.website ?? current.website ?? '').trim(),
+        linkedin: String(incoming.linkedin ?? current.linkedin ?? '').trim(),
+        location: String(incoming.location ?? current.location ?? '').trim(),
+        about: String(incoming.about ?? current.about ?? '').trim(),
+    };
+    recruiter.markModified('recruiterProfile');
+    await recruiter.save();
 
-    if (!application.recruiterWorkTest?.candidateResponse) {
-        res.status(400);
-        throw new Error('Candidate has not submitted work test yet');
-    }
-
-    application.recruiterWorkTest.reviewStatus = reviewStatus;
-    application.recruiterWorkTest.recruiterFeedback = String(feedback || '').trim();
-    application.recruiterWorkTest.reviewedAt = new Date();
-    if (reviewStatus === 'failed') {
-        application.status = 'rejected';
-    }
-    await application.save();
-
-    res.json({
-        message: 'Work test reviewed',
-        status: application.status,
-        recruiterWorkTest: application.recruiterWorkTest,
+    return res.json({
+        message: 'Recruiter profile updated',
+        recruiterProfile: recruiter.recruiterProfile,
     });
 };
 
@@ -164,9 +106,9 @@ const revealIdentity = async (req, res) => {
         throw new Error('Not authorized');
     }
 
-    if (application.status !== 'accepted') {
+    if (application.status !== 'shortlisted') {
         res.status(403);
-        throw new Error('Identity can be revealed only for accepted candidates');
+        throw new Error('Identity can be revealed only for shortlisted candidates');
     }
 
     res.json({
@@ -178,7 +120,7 @@ const revealIdentity = async (req, res) => {
 module.exports = {
     getJobApplications,
     updateApplicationStatus,
-    assignWorkTest,
-    reviewWorkTest,
+    generateJobTest,
+    updateRecruiterProfile,
     revealIdentity,
 };

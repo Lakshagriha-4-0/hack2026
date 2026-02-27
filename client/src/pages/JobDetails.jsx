@@ -11,11 +11,14 @@ const JobDetails = () => {
     const [loading, setLoading] = useState(true);
     const [applied, setApplied] = useState(false);
     const [error, setError] = useState('');
-    const [applying, setApplying] = useState(false);
     const [eligibility, setEligibility] = useState(null);
     const [eligibilityAnswers, setEligibilityAnswers] = useState({});
     const [eligibilityLoading, setEligibilityLoading] = useState(false);
     const [eligibilityMessage, setEligibilityMessage] = useState('');
+    const [companyTest, setCompanyTest] = useState(null);
+    const [companyTestAnswers, setCompanyTestAnswers] = useState({});
+    const [companyTestLoading, setCompanyTestLoading] = useState(false);
+    const [companyTestMessage, setCompanyTestMessage] = useState('');
 
     useEffect(() => {
         const fetchJob = async () => {
@@ -96,16 +99,53 @@ const JobDetails = () => {
         }
     };
 
-    const handleApply = async () => {
-        setApplying(true);
-        setError('');
+    const loadCompanyTest = async () => {
+        setCompanyTestLoading(true);
+        setCompanyTestMessage('');
         try {
-            await api.post(`/candidate/apply/${id}`);
-            setApplied(true);
+            const { data } = await api.get(`/candidate/company-test/${id}`);
+            setCompanyTest(data);
+            setCompanyTestAnswers({});
+            if (data.status === 'passed') {
+                setApplied(true);
+            }
         } catch (err) {
-            setError(err.response?.data?.message || 'Application failed');
+            setCompanyTestMessage(err.response?.data?.message || 'Failed to load company test');
         } finally {
-            setApplying(false);
+            setCompanyTestLoading(false);
+        }
+    };
+
+    const submitCompanyTest = async () => {
+        if (!companyTest?.questions?.length) return;
+        const answers = companyTest.questions.map((q) => ({
+            questionId: q.questionId,
+            answer: companyTestAnswers[q.questionId] || '',
+        }));
+        if (answers.some((a) => !a.answer)) {
+            setCompanyTestMessage('Please answer all company test questions.');
+            return;
+        }
+
+        setCompanyTestLoading(true);
+        setCompanyTestMessage('');
+        try {
+            const { data } = await api.post(`/candidate/company-test/${id}/submit`, { answers });
+            setCompanyTest((prev) => ({
+                ...prev,
+                status: data.status,
+                score: data.score,
+                passScore: data.passScore,
+                questions: undefined,
+            }));
+            setCompanyTestMessage(data.message);
+            if (data.status === 'passed') {
+                setApplied(true);
+            }
+        } catch (err) {
+            setCompanyTestMessage(err.response?.data?.message || 'Failed to submit company test');
+        } finally {
+            setCompanyTestLoading(false);
         }
     };
 
@@ -270,26 +310,77 @@ const JobDetails = () => {
                                                 </button>
                                             ) : null}
 
-                                            <button
-                                                onClick={handleApply}
-                                                disabled={applying || eligibility?.status !== 'passed'}
-                                                className="w-full btn-primary h-16 text-lg tracking-tight font-black shadow-[0_10px_30px_rgba(37,99,235,0.3)] disabled:opacity-70 disabled:cursor-not-allowed"
-                                            >
-                                                {applying ? 'Applying...' : 'Apply Anonymously'}
-                                            </button>
+                                            {eligibility?.status === 'passed' && (
+                                                <>
+                                                    {companyTest?.status === 'passed' ? (
+                                                        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-4 text-sm text-emerald-300">
+                                                            Company test passed ({companyTest.score}%). Profile shared with recruiter.
+                                                        </div>
+                                                    ) : companyTest?.status === 'failed' ? (
+                                                        <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-sm text-red-300">
+                                                            Company test failed ({companyTest.score}% / {companyTest.passScore}%).
+                                                        </div>
+                                                    ) : null}
+
+                                                    {companyTest?.questions?.length ? (
+                                                        <div className="space-y-4 bg-slate-900/40 border border-slate-800 rounded-2xl p-4 max-h-[340px] overflow-auto">
+                                                            {companyTest.questions.map((q, idx) => (
+                                                                <div key={q.questionId} className="space-y-2">
+                                                                    <p className="text-sm font-semibold text-slate-300">{idx + 1}. {q.question}</p>
+                                                                    <div className="space-y-1">
+                                                                        {q.options.map((opt) => (
+                                                                            <label key={opt} className="flex items-center gap-2 text-xs text-slate-400">
+                                                                                <input
+                                                                                    type="radio"
+                                                                                    name={`company-${q.questionId}`}
+                                                                                    value={opt}
+                                                                                    checked={companyTestAnswers[q.questionId] === opt}
+                                                                                    onChange={(e) =>
+                                                                                        setCompanyTestAnswers((prev) => ({ ...prev, [q.questionId]: e.target.value }))
+                                                                                    }
+                                                                                />
+                                                                                {opt}
+                                                                            </label>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                            <button
+                                                                onClick={submitCompanyTest}
+                                                                disabled={companyTestLoading}
+                                                                className="w-full btn-primary h-12"
+                                                            >
+                                                                {companyTestLoading ? 'Submitting Company Test...' : 'Submit Company Test'}
+                                                            </button>
+                                                        </div>
+                                                    ) : !companyTest || companyTest.status !== 'passed' ? (
+                                                        <button
+                                                            onClick={loadCompanyTest}
+                                                            disabled={companyTestLoading}
+                                                            className="w-full btn-primary h-16 text-lg tracking-tight font-black shadow-[0_10px_30px_rgba(37,99,235,0.3)] disabled:opacity-70 disabled:cursor-not-allowed"
+                                                        >
+                                                            {companyTestLoading ? 'Loading Company Test...' : 'Give Company Test'}
+                                                        </button>
+                                                    ) : null}
+                                                </>
+                                            )}
                                         </div>
                                     ) : (
-                                        <button
-                                            onClick={handleApply}
-                                            disabled={applying}
-                                            className="w-full btn-primary h-16 text-lg tracking-tight font-black shadow-[0_10px_30px_rgba(37,99,235,0.3)] disabled:opacity-70 disabled:cursor-not-allowed"
+                                        <Link
+                                            to="/login"
+                                            className="w-full btn-primary h-16 text-lg tracking-tight font-black shadow-[0_10px_30px_rgba(37,99,235,0.3)] flex items-center justify-center"
                                         >
-                                            {applying ? 'Applying...' : 'Apply Anonymously'}
-                                        </button>
+                                            Login to Continue
+                                        </Link>
                                     )}
                                     {eligibilityMessage && (
                                         <div className="mt-2 bg-slate-900 border border-slate-800 text-slate-300 rounded-2xl p-3 text-xs">
                                             {eligibilityMessage}
+                                        </div>
+                                    )}
+                                    {companyTestMessage && (
+                                        <div className="mt-2 bg-slate-900 border border-slate-800 text-slate-300 rounded-2xl p-3 text-xs">
+                                            {companyTestMessage}
                                         </div>
                                     )}
                                     {error && (

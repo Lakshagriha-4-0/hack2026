@@ -1,5 +1,19 @@
 const mongoose = require('mongoose');
 
+const recruiterTestQuestionSchema = mongoose.Schema(
+    {
+        questionId: { type: String, required: true, trim: true },
+        question: { type: String, required: true, trim: true },
+        options: {
+            type: [String],
+            default: [],
+            validate: [(arr) => Array.isArray(arr) && arr.length >= 2, 'At least 2 options are required'],
+        },
+        correctAnswer: { type: String, required: true, trim: true },
+    },
+    { _id: false }
+);
+
 const jobSchema = mongoose.Schema(
     {
         recruiterId: {
@@ -47,6 +61,15 @@ const jobSchema = mongoose.Schema(
             trim: true,
             default: '',
             maxlength: 120,
+        },
+        recruiterTest: {
+            questions: { type: [recruiterTestQuestionSchema], default: [] },
+            passScore: { type: Number, default: 60, min: 0, max: 100 },
+            generatedBy: {
+                type: String,
+                enum: ['manual', 'ai'],
+                default: 'manual',
+            },
         },
     },
     {

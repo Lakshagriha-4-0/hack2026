@@ -6,7 +6,7 @@ const cache = require('../utils/responseCache');
 // @access  Private/Recruiter
 const createJob = async (req, res) => {
     try {
-        const { title, description, requiredSkills, experienceLevel, location, salaryRange } = req.body;
+        const { title, description, requiredSkills, experienceLevel, location, salaryRange, recruiterTest } = req.body;
 
         const normalizedSkills = Array.isArray(requiredSkills)
             ? requiredSkills.map((s) => String(s || '').trim()).filter(Boolean)
@@ -25,6 +25,31 @@ const createJob = async (req, res) => {
             });
         }
 
+        const providedQuestions = Array.isArray(recruiterTest?.questions) ? recruiterTest.questions : [];
+        const normalizedQuestions = providedQuestions
+            .map((q, idx) => {
+                const options = Array.isArray(q?.options)
+                    ? q.options.map((o) => String(o || '').trim()).filter(Boolean)
+                    : [];
+                const correctAnswer = String(q?.correctAnswer || '').trim();
+                if (!q?.question || options.length < 2 || !options.includes(correctAnswer)) return null;
+                return {
+                    questionId: String(q?.questionId || `rq${idx + 1}`),
+                    question: String(q.question).trim(),
+                    options,
+                    correctAnswer,
+                };
+            })
+            .filter(Boolean);
+
+        if (!normalizedQuestions.length) {
+            return res.status(400).json({
+                message: 'Recruiter qualification test is required (add at least one valid question)',
+            });
+        }
+
+        const passScore = Number(recruiterTest?.passScore || 60);
+
         const job = new Job({
             recruiterId: req.user._id,
             title,
@@ -33,6 +58,11 @@ const createJob = async (req, res) => {
             experienceLevel,
             location,
             salaryRange,
+            recruiterTest: {
+                questions: normalizedQuestions,
+                passScore: Number.isFinite(passScore) ? Math.min(100, Math.max(0, passScore)) : 60,
+                generatedBy: recruiterTest?.generatedBy === 'ai' ? 'ai' : 'manual',
+            },
         });
 
         const createdJob = await job.save();

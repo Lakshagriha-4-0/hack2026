@@ -101,7 +101,7 @@ const authUser = async (req, res) => {
 
 const getMe = async (req, res) => {
     const user = await User.findById(req.user._id)
-        .select('name email role candidatePublicId candidateProfile');
+        .select('name email role candidatePublicId candidateProfile recruiterProfile');
 
     if (user) {
         await ensureCandidatePublicId(user);
@@ -112,6 +112,7 @@ const getMe = async (req, res) => {
             role: user.role,
             candidatePublicId: user.candidatePublicId,
             candidateProfile: user.candidateProfile,
+            recruiterProfile: user.recruiterProfile,
         });
     } else {
         res.status(404);
