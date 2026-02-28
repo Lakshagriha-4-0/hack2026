@@ -43,11 +43,11 @@ const CandidateDashboard = () => {
     return (
         <div className="min-h-screen bg-slate-950 text-slate-200">
             <Navbar />
-            <main className="max-w-6xl mx-auto py-12 px-4 relative">
+            <main className="max-w-6xl mx-auto py-12 px-4 relative animate-fade-in">
                 {/* Background Blobs */}
                 <div className="absolute top-0 right-0 w-[300px] h-[300px] bg-blue-600/5 rounded-full blur-[100px]" />
 
-                <header className="mb-12 relative z-10">
+                <header className="mb-12 relative z-10 animate-slide-up">
                     <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-semibold uppercase tracking-wider mb-6">
                         <Sparkles className="w-3.5 h-3.5" />
                         <span>Candidate Console</span>
@@ -60,7 +60,7 @@ const CandidateDashboard = () => {
                     </p>
                 </header>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16 relative z-10">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16 relative z-10 animate-slide-up" style={{ animationDelay: '0.1s' }}>
                     <div className="glass-premium p-8 rounded-[2rem] border-white/5 group hover:border-blue-500/20 transition-all duration-300">
                         <div className="w-14 h-14 bg-blue-500/10 rounded-2xl flex items-center justify-center mb-8 group-hover:scale-110 transition-transform shadow-xl shadow-blue-500/5">
                             <FileText className="w-7 h-7 text-blue-400" />
@@ -92,7 +92,7 @@ const CandidateDashboard = () => {
                     </Link>
                 </div>
 
-                <section className="relative z-10">
+                <section className="relative z-10 animate-slide-up" style={{ animationDelay: '0.2s' }}>
                     <div className="flex justify-between items-end mb-10">
                         <div>
                             <h2 className="text-3xl font-extrabold tracking-tight mb-2">Recommended for You</h2>

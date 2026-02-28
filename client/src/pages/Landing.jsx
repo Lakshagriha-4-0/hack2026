@@ -34,8 +34,8 @@ const Landing = () => {
             <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-600/10 rounded-full blur-[120px] animate-pulse"></div>
             <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-600/10 rounded-full blur-[120px] animate-pulse" style={{ animationDelay: '2s' }}></div>
 
-            <main className="max-w-7xl mx-auto px-4 pt-20 pb-32 relative z-10">
-                <div className="text-center space-y-6 mb-20">
+            <main className="max-w-7xl mx-auto px-4 pt-20 pb-32 relative z-10 animate-fade-in">
+                <div className="text-center space-y-6 mb-20 animate-slide-up">
                     <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm font-medium animate-float">
                         <Sparkles className="w-4 h-4" />
                         <span>The Future of Ethical Hiring</span>
@@ -52,7 +52,7 @@ const Landing = () => {
                     </p>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-5xl mx-auto">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-5xl mx-auto animate-slide-up" style={{ animationDelay: '0.2s' }}>
                     {/* Candidate Side */}
                     <div className="glass-premium rounded-[2.5rem] p-8 md:p-10 flex flex-col items-center group cursor-pointer hover:border-blue-500/30 transition-all duration-500"
                         onMouseEnter={preloadCandidateRoutes}

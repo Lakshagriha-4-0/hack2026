@@ -13,6 +13,12 @@ const {
 } = require('../utils/resumeUtils');
 const fs = require('fs');
 
+const isJobExpired = (job) => {
+    if (!job) return true;
+    if (job.status === 'expired') return true;
+    return Boolean(job.deadlineAt && new Date(job.deadlineAt) <= new Date());
+};
+
 // @desc    Update candidate profile
 // @route   PUT /api/candidate/profile
 // @access  Private/Candidate
@@ -383,8 +389,8 @@ const getSuitableJobs = async (req, res) => {
         ? user.candidateProfile.public.skills
         : [];
 
-    const jobs = await Job.find({})
-        .select('recruiterId title description requiredSkills experienceLevel location salaryRange createdAt')
+    const jobs = await Job.find({ status: 'active', deadlineAt: { $gt: new Date() } })
+        .select('recruiterId title description requiredSkills experienceLevel location salaryRange createdAt deadlineAt status')
         .populate('recruiterId', 'name email')
         .lean();
 
@@ -407,9 +413,12 @@ const getSuitableJobs = async (req, res) => {
 // @route   POST /api/candidate/eligibility/:jobId/start
 // @access  Private/Candidate
 const startEligibilityTest = async (req, res) => {
-    const job = await Job.findById(req.params.jobId).select('title requiredSkills').lean();
+    const job = await Job.findById(req.params.jobId).select('title requiredSkills deadlineAt status').lean();
     if (!job) {
         return res.status(404).json({ message: 'Job not found' });
+    }
+    if (isJobExpired(job)) {
+        return res.status(410).json({ message: 'This job has expired' });
     }
 
     const { generatedBy, questions } = await generateEligibilityQuestions(job);
@@ -522,10 +531,13 @@ const submitEligibilityTest = async (req, res) => {
 // @access  Private/Candidate
 const getCompanyTest = async (req, res) => {
     const job = await Job.findById(req.params.jobId)
-        .select('recruiterTest requiredSkills title recruiterId')
+        .select('recruiterTest requiredSkills title recruiterId deadlineAt status')
         .lean();
     if (!job) {
         return res.status(404).json({ message: 'Job not found' });
+    }
+    if (isJobExpired(job)) {
+        return res.status(410).json({ message: 'This job has expired' });
     }
 
     const alreadyApplied = await Application.findOne({
@@ -597,9 +609,12 @@ const submitCompanyTest = async (req, res) => {
         return res.status(400).json({ message: 'Answers are required' });
     }
 
-    const job = await Job.findById(req.params.jobId).select('recruiterId requiredSkills recruiterTest').lean();
+    const job = await Job.findById(req.params.jobId).select('recruiterId requiredSkills recruiterTest deadlineAt status').lean();
     if (!job) {
         return res.status(404).json({ message: 'Job not found' });
+    }
+    if (isJobExpired(job)) {
+        return res.status(410).json({ message: 'This job has expired' });
     }
 
     const eligibility = await EligibilityTest.findOne({
@@ -664,6 +679,10 @@ const applyToJob = async (req, res) => {
     if (!job) {
         res.status(404);
         throw new Error('Job not found');
+    }
+    if (isJobExpired(job)) {
+        res.status(410);
+        throw new Error('This job has expired');
     }
 
     const alreadyApplied = await Application.findOne({

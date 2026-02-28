@@ -1,12 +1,19 @@
 const Job = require('../models/Job');
 const cache = require('../utils/responseCache');
 
+const markExpiredJobs = async () => {
+    await Job.updateMany(
+        { status: 'active', deadlineAt: { $lte: new Date() } },
+        { $set: { status: 'expired' } }
+    );
+};
+
 // @desc    Create a new job
 // @route   POST /api/jobs
 // @access  Private/Recruiter
 const createJob = async (req, res) => {
     try {
-        const { title, description, requiredSkills, experienceLevel, location, salaryRange, recruiterTest } = req.body;
+        const { title, description, requiredSkills, experienceLevel, location, salaryRange, recruiterTest, deadlineDate } = req.body;
 
         const normalizedSkills = Array.isArray(requiredSkills)
             ? requiredSkills.map((s) => String(s || '').trim()).filter(Boolean)
@@ -19,10 +26,14 @@ const createJob = async (req, res) => {
             return res.status(401).json({ message: 'Not authorized' });
         }
 
-        if (!title || !description || !normalizedSkills.length) {
+        const deadlineAt = deadlineDate ? new Date(deadlineDate) : null;
+        if (!title || !description || !normalizedSkills.length || !deadlineAt || Number.isNaN(deadlineAt.getTime())) {
             return res.status(400).json({
-                message: 'Title, description and at least one required skill are mandatory',
+                message: 'Title, description, at least one required skill, and valid deadline date are mandatory',
             });
+        }
+        if (deadlineAt <= new Date()) {
+            return res.status(400).json({ message: 'Deadline must be a future date' });
         }
 
         const providedQuestions = Array.isArray(recruiterTest?.questions) ? recruiterTest.questions : [];
@@ -58,6 +69,8 @@ const createJob = async (req, res) => {
             experienceLevel,
             location,
             salaryRange,
+            deadlineAt,
+            status: 'active',
             recruiterTest: {
                 questions: normalizedQuestions,
                 passScore: Number.isFinite(passScore) ? Math.min(100, Math.max(0, passScore)) : 60,
@@ -81,14 +94,15 @@ const createJob = async (req, res) => {
 // @route   GET /api/jobs
 // @access  Public
 const getJobs = async (req, res) => {
+    await markExpiredJobs();
     const cacheKey = 'jobs:list';
     const cached = cache.get(cacheKey);
     if (cached) {
         return res.json(cached);
     }
 
-    const jobs = await Job.find({})
-        .select('recruiterId title description requiredSkills experienceLevel location salaryRange createdAt')
+    const jobs = await Job.find({ status: 'active', deadlineAt: { $gt: new Date() } })
+        .select('recruiterId title description requiredSkills experienceLevel location salaryRange createdAt deadlineAt status')
         .populate('recruiterId', 'name email')
         .lean();
     cache.set(cacheKey, jobs, 30000);
@@ -99,8 +113,9 @@ const getJobs = async (req, res) => {
 // @route   GET /api/jobs/mine
 // @access  Private/Recruiter
 const getMyJobs = async (req, res) => {
+    await markExpiredJobs();
     const jobs = await Job.find({ recruiterId: req.user._id })
-        .select('title description requiredSkills experienceLevel location salaryRange createdAt')
+        .select('title description requiredSkills experienceLevel location salaryRange createdAt deadlineAt status')
         .lean();
     res.json(jobs);
 };
@@ -109,6 +124,7 @@ const getMyJobs = async (req, res) => {
 // @route   GET /api/jobs/:id
 // @access  Public
 const getJobById = async (req, res) => {
+    await markExpiredJobs();
     const cacheKey = `jobs:detail:${req.params.id}`;
     const cached = cache.get(cacheKey);
     if (cached) {
@@ -116,7 +132,7 @@ const getJobById = async (req, res) => {
     }
 
     const job = await Job.findById(req.params.id)
-        .select('recruiterId title description requiredSkills experienceLevel location salaryRange createdAt')
+        .select('recruiterId title description requiredSkills experienceLevel location salaryRange createdAt deadlineAt status')
         .populate('recruiterId', 'name email')
         .lean();
 

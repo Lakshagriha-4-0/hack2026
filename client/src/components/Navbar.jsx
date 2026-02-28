@@ -27,7 +27,7 @@ const Navbar = () => {
     }, []);
 
     return (
-        <nav className="bg-slate-900/80 backdrop-blur-md border-b border-slate-800 px-8 py-4 flex items-center justify-between sticky top-0 z-50">
+        <nav className="bg-slate-950/60 backdrop-blur-2xl border-b border-white/5 px-8 py-4 md:py-5 flex items-center justify-between sticky top-0 z-50 shadow-[0_4px_30px_rgba(0,0,0,0.1)] transition-all duration-300">
             <Link to="/" className="text-2xl font-black bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent tracking-tighter hover:opacity-80 transition-opacity">
                 EqualPath
             </Link>

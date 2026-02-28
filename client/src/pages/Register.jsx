@@ -38,7 +38,7 @@ const Register = () => {
                 <span>Back to Home</span>
             </Link>
 
-            <div className="w-full max-w-md relative z-10 py-10">
+            <div className="w-full max-w-md relative z-10 py-10 animate-slide-up">
                 <div className="glass-premium rounded-[2rem] p-8 md:p-10 shadow-2xl">
                     <div className="text-center mb-10">
                         <div className="inline-flex p-4 bg-emerald-500/10 rounded-2xl mb-6 shadow-xl shadow-emerald-500/5">

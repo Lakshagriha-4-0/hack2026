@@ -62,6 +62,17 @@ const jobSchema = mongoose.Schema(
             default: '',
             maxlength: 120,
         },
+        deadlineAt: {
+            type: Date,
+            required: true,
+            index: true,
+        },
+        status: {
+            type: String,
+            enum: ['active', 'expired'],
+            default: 'active',
+            index: true,
+        },
         recruiterTest: {
             questions: { type: [recruiterTestQuestionSchema], default: [] },
             passScore: { type: Number, default: 60, min: 0, max: 100 },

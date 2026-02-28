@@ -19,6 +19,7 @@ const RecruiterDashboard = () => {
         requiredSkills: '',
         location: '',
         salaryRange: '',
+        deadlineDate: '',
     });
     const [recruiterTest, setRecruiterTest] = useState({
         generatedBy: 'manual',
@@ -65,7 +66,7 @@ const RecruiterDashboard = () => {
             });
             setShowCreate(false);
             setShowTestBuilder(false);
-            setNewJob({ title: '', description: '', requiredSkills: '', location: '', salaryRange: '' });
+            setNewJob({ title: '', description: '', requiredSkills: '', location: '', salaryRange: '', deadlineDate: '' });
             setRecruiterTest({ generatedBy: 'manual', passScore: 60, questions: [] });
             fetchMyJobs();
         } catch (err) {
@@ -143,9 +144,9 @@ const RecruiterDashboard = () => {
                 requiredSkills: skillsArray,
             });
             const aiQuestions = (data.questions || []).map((q, idx) => ({
-                    ...q,
-                    questionId: q.questionId || `aiq${Date.now()}_${idx + 1}`,
-                    isEditing: false,
+                ...q,
+                questionId: q.questionId || `aiq${Date.now()}_${idx + 1}`,
+                isEditing: false,
             }));
             setRecruiterTest((prev) => {
                 const existing = Array.isArray(prev.questions) ? prev.questions : [];
@@ -168,8 +169,8 @@ const RecruiterDashboard = () => {
     return (
         <div className="min-h-screen bg-slate-950">
             <Navbar />
-            <main className="max-w-6xl mx-auto py-12 px-4">
-                <div className="flex justify-between items-center mb-12">
+            <main className="max-w-6xl mx-auto py-12 px-4 relative animate-fade-in">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 animate-slide-up gap-6">
                     <div>
                         <h1 className="text-4xl font-bold mb-2">Recruiter Center</h1>
                         <p className="text-slate-500">Manage your postings and review talent anonymously.</p>
@@ -239,6 +240,16 @@ const RecruiterDashboard = () => {
                                         />
                                     </div>
                                 </div>
+                                <div>
+                                    <label className="block text-sm text-slate-500 mb-1">Application Deadline</label>
+                                    <input
+                                        required
+                                        type="datetime-local"
+                                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2"
+                                        value={newJob.deadlineDate}
+                                        onChange={e => setNewJob({ ...newJob, deadlineDate: e.target.value })}
+                                    />
+                                </div>
                                 <div className="pt-4 border-t border-slate-800">
                                     <div className="flex flex-wrap items-center justify-between gap-3">
                                         <div>
@@ -251,11 +262,10 @@ const RecruiterDashboard = () => {
                                                 disabled={!canConfigureTest}
                                                 title={!canConfigureTest ? 'Add title, description and required skills first.' : ''}
                                                 onClick={() => { setShowTestBuilder(true); setTestBuilderMessage(''); }}
-                                                className={`px-3 py-2 rounded-lg text-sm font-semibold ${
-                                                    canConfigureTest
-                                                        ? 'bg-slate-800 hover:bg-slate-700'
-                                                        : 'bg-slate-800/50 text-slate-500 cursor-not-allowed'
-                                                }`}
+                                                className={`px-3 py-2 rounded-lg text-sm font-semibold ${canConfigureTest
+                                                    ? 'bg-slate-800 hover:bg-slate-700'
+                                                    : 'bg-slate-800/50 text-slate-500 cursor-not-allowed'
+                                                    }`}
                                             >
                                                 Configure Test
                                             </button>
@@ -416,6 +426,14 @@ const RecruiterDashboard = () => {
                                         ))}
                                         {job.requiredSkills.length > 3 && <span className="text-[10px] text-slate-600">+{job.requiredSkills.length - 3} more</span>}
                                     </div>
+                                    {job.deadlineAt && (
+                                        <p className="text-xs text-amber-400/90 mb-4">
+                                            Deadline: {new Date(job.deadlineAt).toLocaleString()}
+                                        </p>
+                                    )}
+                                    {job.status === 'expired' && (
+                                        <p className="text-xs text-red-400/90 mb-4 font-semibold">Expired</p>
+                                    )}
                                 </div>
 
                                 <Link
