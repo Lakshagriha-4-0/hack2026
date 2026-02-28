@@ -367,36 +367,54 @@ ${text.slice(0, 10000)}
 };
 
 const buildBiasResumePreview = async ({ rawText = '', personal = {}, extracted = {}, publicData = {} }) => {
-  // Try AI first for better quality
-  const aiPreview = await generateBiasFreePreviewWithGemini(rawText);
-  if (aiPreview) {
-    logger.inf('resume.biasfree.ai.ok');
-    return sanitizeReadableText(aiPreview);
-  }
+  const skills = Array.isArray(publicData?.skills) ? publicData.skills : extracted?.public?.skills || [];
+  const projects = Array.isArray(publicData?.projects) ? publicData.projects : extracted?.public?.projects || [];
+  const experience = Array.isArray(publicData?.experience) ? publicData.experience : extracted?.public?.experience || [];
 
-  const anonymized = sanitizeReadableText(anonymizeResumeText(rawText, personal));
-  if (anonymized && anonymized.length > 120 && isReadableText(anonymized)) {
-    return anonymized;
-  }
+  const skillLines = skills
+    .map((s) => toCleanString(s))
+    .filter(Boolean)
+    .slice(0, 20)
+    .map((s) => `- ${s}`);
 
-  const skills = Array.isArray(publicData.skills) ? publicData.skills : extracted?.public?.skills || [];
-  const experienceYears = publicData.experienceYears || extracted?.public?.experienceYears || 0;
-  const tagline = publicData.tagline || '';
-  const city = publicData.city || '';
+  const projectLines = projects
+    .map((p) => {
+      const title = toCleanString(p?.title);
+      const description = toCleanString(p?.description);
+      const technologies = toStringArray(p?.technologies || []);
+      const parts = [title, description].filter(Boolean);
+      if (technologies.length) {
+        parts.push(`Tech: ${technologies.join(', ')}`);
+      }
+      return parts.length ? `- ${parts.join(' | ')}` : '';
+    })
+    .filter(Boolean)
+    .slice(0, 8);
+
+  const experienceLines = experience
+    .map((x) => {
+      const role = toCleanString(x?.role);
+      const company = toCleanString(x?.company);
+      const description = toCleanString(x?.description);
+      const dateBits = [toCleanString(x?.startDate), toCleanString(x?.endDate)].filter(Boolean).join(' - ');
+      const title = [role, company ? `at ${company}` : ''].filter(Boolean).join(' ');
+      const parts = [title, dateBits, description].filter(Boolean);
+      return parts.length ? `- ${parts.join(' | ')}` : '';
+    })
+    .filter(Boolean)
+    .slice(0, 10);
 
   return sanitizeReadableText(
     [
-      'Bias-Free Candidate Profile',
+      'Skills',
+      ...(skillLines.length ? skillLines : ['- Not provided']),
       '',
-      tagline ? `Tagline: ${tagline}` : '',
-      experienceYears ? `Experience: ${experienceYears} years` : '',
-      city ? `Location: ${city}` : '',
-      skills.length ? `Skills: ${skills.join(', ')}` : '',
+      'Projects',
+      ...(projectLines.length ? projectLines : ['- Not provided']),
       '',
-      'Identity-protected details are hidden until shortlist.',
-    ]
-      .filter(Boolean)
-      .join('\n')
+      'Experience',
+      ...(experienceLines.length ? experienceLines : ['- Not provided']),
+    ].join('\n')
   );
 };
 

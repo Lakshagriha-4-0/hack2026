@@ -45,7 +45,8 @@ const createJob = async (req, res) => {
                 const correctAnswer = String(q?.correctAnswer || '').trim();
                 if (!q?.question || options.length < 2 || !options.includes(correctAnswer)) return null;
                 return {
-                    questionId: String(q?.questionId || `rq${idx + 1}`),
+                    // Force stable unique IDs to avoid scoring mismatch from duplicate IDs.
+                    questionId: `rq${idx + 1}`,
                     question: String(q.question).trim(),
                     options,
                     correctAnswer,

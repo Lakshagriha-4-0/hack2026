@@ -113,6 +113,11 @@ function App() {
                                 <JobApplications />
                             </ProtectedRoute>
                         } />
+                        <Route path="/recruiter/jobs/:jobId/applications/:appId" element={
+                            <ProtectedRoute allowedRoles={['recruiter']}>
+                                <JobApplications />
+                            </ProtectedRoute>
+                        } />
 
                         <Route path="*" element={<Navigate to="/" />} />
                     </Routes>

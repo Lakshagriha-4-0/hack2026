@@ -19,6 +19,26 @@ const isJobExpired = (job) => {
     return Boolean(job.deadlineAt && new Date(job.deadlineAt) <= new Date());
 };
 
+const normalizeQuestionIds = (questions = [], prefix = 'q') => {
+    const used = new Set();
+    return (questions || []).map((q, idx) => {
+        let id = String(q?.questionId || `${prefix}${idx + 1}`).trim() || `${prefix}${idx + 1}`;
+        if (used.has(id)) {
+            id = `${prefix}${idx + 1}`;
+        }
+        let counter = 1;
+        while (used.has(id)) {
+            id = `${prefix}${idx + 1}_${counter}`;
+            counter += 1;
+        }
+        used.add(id);
+        return {
+            ...q,
+            questionId: id,
+        };
+    });
+};
+
 // @desc    Update candidate profile
 // @route   PUT /api/candidate/profile
 // @access  Private/Candidate
@@ -388,8 +408,17 @@ const getSuitableJobs = async (req, res) => {
     const candidateSkills = Array.isArray(user?.candidateProfile?.public?.skills)
         ? user.candidateProfile.public.skills
         : [];
+    const appliedJobIds = await Application.find({ candidateId: req.user._id })
+        .select('jobId')
+        .lean()
+        .then((rows) => rows.map((row) => row.jobId).filter(Boolean));
 
-    const jobs = await Job.find({ status: 'active', deadlineAt: { $gt: new Date() } })
+    const jobsQuery = { status: 'active', deadlineAt: { $gt: new Date() } };
+    if (appliedJobIds.length) {
+        jobsQuery._id = { $nin: appliedJobIds };
+    }
+
+    const jobs = await Job.find(jobsQuery)
         .select('recruiterId title description requiredSkills experienceLevel location salaryRange createdAt deadlineAt status')
         .populate('recruiterId', 'name email')
         .lean();
@@ -409,7 +438,7 @@ const getSuitableJobs = async (req, res) => {
     res.json(suitedJobs);
 };
 
-// @desc    Start or restart eligibility test for a job
+// @desc    Start eligibility test for a job
 // @route   POST /api/candidate/eligibility/:jobId/start
 // @access  Private/Candidate
 const startEligibilityTest = async (req, res) => {
@@ -419,6 +448,44 @@ const startEligibilityTest = async (req, res) => {
     }
     if (isJobExpired(job)) {
         return res.status(410).json({ message: 'This job has expired' });
+    }
+
+    const existingTest = await EligibilityTest.findOne({
+        candidateId: req.user._id,
+        jobId: job._id,
+    }).lean();
+    if (existingTest) {
+        if (existingTest.status === 'failed') {
+            return res.status(403).json({
+                message: 'Eligibility test already failed. Reattempt is not allowed for this job.',
+            });
+        }
+
+        if (existingTest.status === 'passed') {
+            return res.json({
+                jobId: existingTest.jobId,
+                status: existingTest.status,
+                score: existingTest.score,
+                passScore: existingTest.passScore,
+                submittedAt: existingTest.submittedAt,
+                questions: undefined,
+            });
+        }
+
+        if (existingTest.status === 'pending' && Array.isArray(existingTest.questions) && existingTest.questions.length) {
+            return res.json({
+                jobId: existingTest.jobId,
+                status: existingTest.status,
+                score: existingTest.score,
+                passScore: existingTest.passScore,
+                submittedAt: existingTest.submittedAt,
+                questions: existingTest.questions.map((q) => ({
+                    questionId: q.questionId,
+                    question: q.question,
+                    options: q.options,
+                })),
+            });
+        }
     }
 
     const { generatedBy, questions } = await generateEligibilityQuestions(job);
@@ -500,6 +567,14 @@ const submitEligibilityTest = async (req, res) => {
     if (!test) {
         return res.status(404).json({ message: 'Eligibility test not found. Start test first.' });
     }
+    if (test.status !== 'pending') {
+        return res.status(400).json({
+            message:
+                test.status === 'failed'
+                    ? 'Eligibility test already submitted and failed. Reattempt is not allowed.'
+                    : 'Eligibility test already submitted.',
+        });
+    }
 
     const { score } = evaluateAnswers(test.questions, answers);
     const passed = score >= test.passScore;
@@ -522,7 +597,7 @@ const submitEligibilityTest = async (req, res) => {
         passScore: test.passScore,
         message: passed
             ? 'Eligibility test passed. You can now apply.'
-            : 'Eligibility test not passed. Retry to apply later.',
+            : 'Eligibility test not passed. Reattempt is not allowed for this job.',
     });
 };
 
@@ -566,11 +641,20 @@ const getCompanyTest = async (req, res) => {
         return res.status(400).json({ message: 'Company test is not configured for this job' });
     }
 
-    const currentRound = eligibility.companyRound || {};
+    let currentRound = eligibility.companyRound || {};
+    if (currentRound.status === 'failed') {
+        return res.status(403).json({
+            status: 'failed',
+            score: currentRound.score || 0,
+            passScore: currentRound.passScore || Number(job.recruiterTest?.passScore || 60),
+            message: 'Company test already failed. Reattempt is not allowed for this job.',
+        });
+    }
+
     if (!Array.isArray(currentRound.questions) || !currentRound.questions.length) {
         eligibility.companyRound = {
-            questions: sourceQuestions.map((q) => ({
-                questionId: q.questionId,
+            questions: sourceQuestions.map((q, idx) => ({
+                questionId: `cq${idx + 1}`,
                 question: q.question,
                 options: q.options || [],
                 correctAnswer: q.correctAnswer,
@@ -582,21 +666,33 @@ const getCompanyTest = async (req, res) => {
             submittedAt: null,
         };
         await eligibility.save();
+        currentRound = eligibility.companyRound || {};
+    }
+
+    // Backward compatibility: normalize duplicate/blank IDs in old stored rounds.
+    if (Array.isArray(currentRound.questions) && currentRound.questions.length) {
+        const normalized = normalizeQuestionIds(currentRound.questions, 'cq');
+        const changed = normalized.some((q, idx) => q.questionId !== currentRound.questions[idx]?.questionId);
+        if (changed) {
+            eligibility.companyRound.questions = normalized;
+            await eligibility.save();
+            currentRound = eligibility.companyRound || {};
+        }
     }
 
     res.json({
-        status: eligibility.companyRound.status,
-        score: eligibility.companyRound.score,
-        passScore: eligibility.companyRound.passScore,
+        status: currentRound.status,
+        score: currentRound.score,
+        passScore: currentRound.passScore,
         questions:
-            eligibility.companyRound.status === 'pending'
-                ? eligibility.companyRound.questions.map((q) => ({
+            currentRound.status === 'pending'
+                ? currentRound.questions.map((q) => ({
                     questionId: q.questionId,
                     question: q.question,
                     options: q.options,
                 }))
                 : undefined,
-        submittedAt: eligibility.companyRound.submittedAt,
+        submittedAt: currentRound.submittedAt,
     });
 };
 
@@ -629,6 +725,14 @@ const submitCompanyTest = async (req, res) => {
     if (!Array.isArray(round.questions) || !round.questions.length) {
         return res.status(400).json({ message: 'Company test not initialized. Open company test first.' });
     }
+    if (round.status && round.status !== 'pending') {
+        return res.status(400).json({
+            message:
+                round.status === 'failed'
+                    ? 'Company test already submitted and failed. Reattempt is not allowed.'
+                    : 'Company test already submitted.',
+        });
+    }
 
     const { score } = evaluateAnswers(round.questions, answers);
     const passed = score >= (round.passScore || 60);
@@ -649,7 +753,7 @@ const submitCompanyTest = async (req, res) => {
             status: 'failed',
             score,
             passScore: round.passScore || 60,
-            message: 'Company test not passed. Your profile was not shared with recruiter.',
+            message: 'Company test not passed. Reattempt is not allowed and your profile was not shared with recruiter.',
         });
     }
 
@@ -713,7 +817,7 @@ const applyToJob = async (req, res) => {
 // @access  Private/Candidate
 const getMyApplications = async (req, res) => {
     const applications = await Application.find({ candidateId: req.user._id })
-        .select('jobId status createdAt matchScore')
+        .select('jobId status createdAt matchScore anonymousId candidatePublicId interviewInvite')
         .populate({ path: 'jobId', select: 'title description location', options: { lean: true } })
         .sort('-createdAt')
         .lean();
@@ -780,6 +884,14 @@ const submitMyWorkTest = async (req, res) => {
     if (!Array.isArray(application.recruiterRoundTest?.questions) || !application.recruiterRoundTest.questions.length) {
         return res.status(400).json({ message: 'Recruiter work test is not assigned yet' });
     }
+    if (application.recruiterRoundTest.status && application.recruiterRoundTest.status !== 'pending') {
+        return res.status(400).json({
+            message:
+                application.recruiterRoundTest.status === 'failed'
+                    ? 'Recruiter work test already submitted and failed. Reattempt is not allowed.'
+                    : 'Recruiter work test already submitted.',
+        });
+    }
 
     const { score } = evaluateAnswers(application.recruiterRoundTest.questions, answers);
     const passed = score >= (application.recruiterRoundTest.passScore || 60);
@@ -799,7 +911,7 @@ const submitMyWorkTest = async (req, res) => {
     res.json({
         message: passed
             ? 'Recruiter round test passed. You are shortlisted automatically.'
-            : 'Recruiter round test not passed. Application rejected automatically.',
+            : 'Recruiter round test not passed. Reattempt is not allowed and application is rejected automatically.',
         reviewStatus: application.recruiterRoundTest.status,
         score: application.recruiterRoundTest.score,
         passScore: application.recruiterRoundTest.passScore,

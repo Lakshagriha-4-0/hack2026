@@ -60,6 +60,10 @@ const applicationSchema = mongoose.Schema(
             default: 'applied',
             index: true,
         },
+        interviewInvite: {
+            sentAt: Date,
+            message: { type: String, trim: true, default: '' },
+        },
         recruiterRoundTest: {
             questions: [
                 {

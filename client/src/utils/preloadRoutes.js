@@ -10,6 +10,7 @@ const routePreloaders = {
     jobApplications: () => import('../pages/JobApplications'),
     profileBuilder: () => import('../pages/ProfileBuilder'),
     profileEditor: () => import('../pages/ProfileEditor'),
+    performance: () => import('../pages/Performance'),
 };
 
 const loaded = new Set();
@@ -27,6 +28,7 @@ export const preloadCandidateRoutes = () => {
     preloadRoute('profileBuilder');
     preloadRoute('jobs');
     preloadRoute('applications');
+    preloadRoute('performance');
 };
 
 export const preloadRecruiterRoutes = () => {

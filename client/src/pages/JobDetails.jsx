@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link, useBeforeUnload } from 'react-router-dom';
 import api from '../api/axios';
 import Navbar from '../components/Navbar';
 import { Briefcase, MapPin, DollarSign, ArrowLeft, CheckCircle, Clock, ShieldCheck, Sparkles, Building2 } from 'lucide-react';
@@ -19,6 +19,53 @@ const JobDetails = () => {
     const [companyTestAnswers, setCompanyTestAnswers] = useState({});
     const [companyTestLoading, setCompanyTestLoading] = useState(false);
     const [companyTestMessage, setCompanyTestMessage] = useState('');
+    const [lockMessage, setLockMessage] = useState('');
+    const [eligibilityModalOpen, setEligibilityModalOpen] = useState(false);
+    const [companyModalOpen, setCompanyModalOpen] = useState(false);
+
+    const isEligibilityTestInProgress =
+        eligibility?.status === 'pending' &&
+        Array.isArray(eligibility?.questions) &&
+        eligibility.questions.length > 0;
+    const isCompanyTestInProgress =
+        companyTest?.status === 'pending' &&
+        Array.isArray(companyTest?.questions) &&
+        companyTest.questions.length > 0;
+    const isTestLocked = isEligibilityTestInProgress || isCompanyTestInProgress;
+    const isAnyTestModalOpen = eligibilityModalOpen || companyModalOpen;
+
+    useBeforeUnload((event) => {
+        if (!isTestLocked) return;
+        event.preventDefault();
+        event.returnValue = '';
+    });
+
+    useEffect(() => {
+        if (!isTestLocked) {
+            setLockMessage('');
+        }
+    }, [isTestLocked]);
+
+    useEffect(() => {
+        if (isEligibilityTestInProgress) {
+            setEligibilityModalOpen(true);
+        }
+    }, [isEligibilityTestInProgress]);
+
+    useEffect(() => {
+        if (isCompanyTestInProgress) {
+            setCompanyModalOpen(true);
+        }
+    }, [isCompanyTestInProgress]);
+
+    useEffect(() => {
+        if (typeof document === 'undefined' || !isAnyTestModalOpen) return undefined;
+        const originalOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => {
+            document.body.style.overflow = originalOverflow;
+        };
+    }, [isAnyTestModalOpen]);
 
     useEffect(() => {
         const fetchJob = async () => {
@@ -57,10 +104,14 @@ const JobDetails = () => {
     const startEligibility = async () => {
         setEligibilityLoading(true);
         setEligibilityMessage('');
+        setLockMessage('');
         try {
             const { data } = await api.post(`/candidate/eligibility/${id}/start`);
             setEligibility(data);
             setEligibilityAnswers({});
+            if (Array.isArray(data?.questions) && data.questions.length > 0) {
+                setEligibilityModalOpen(true);
+            }
         } catch (err) {
             setEligibilityMessage(err.response?.data?.message || 'Failed to start eligibility test');
         } finally {
@@ -70,6 +121,7 @@ const JobDetails = () => {
 
     const submitEligibility = async () => {
         if (!eligibility?.questions?.length) return;
+        setLockMessage('');
         const answers = eligibility.questions.map((q) => ({
             questionId: q.questionId,
             answer: eligibilityAnswers[q.questionId] || '',
@@ -92,6 +144,7 @@ const JobDetails = () => {
                 submittedAt: new Date().toISOString(),
             }));
             setEligibilityMessage(data.message);
+            setEligibilityModalOpen(false);
         } catch (err) {
             setEligibilityMessage(err.response?.data?.message || 'Failed to submit eligibility test');
         } finally {
@@ -102,10 +155,14 @@ const JobDetails = () => {
     const loadCompanyTest = async () => {
         setCompanyTestLoading(true);
         setCompanyTestMessage('');
+        setLockMessage('');
         try {
             const { data } = await api.get(`/candidate/company-test/${id}`);
             setCompanyTest(data);
             setCompanyTestAnswers({});
+            if (Array.isArray(data?.questions) && data.questions.length > 0) {
+                setCompanyModalOpen(true);
+            }
             if (data.status === 'passed') {
                 setApplied(true);
             }
@@ -118,6 +175,7 @@ const JobDetails = () => {
 
     const submitCompanyTest = async () => {
         if (!companyTest?.questions?.length) return;
+        setLockMessage('');
         const answers = companyTest.questions.map((q) => ({
             questionId: q.questionId,
             answer: companyTestAnswers[q.questionId] || '',
@@ -139,6 +197,7 @@ const JobDetails = () => {
                 questions: undefined,
             }));
             setCompanyTestMessage(data.message);
+            setCompanyModalOpen(false);
             if (data.status === 'passed') {
                 setApplied(true);
             }
@@ -172,14 +231,28 @@ const JobDetails = () => {
 
     return (
         <div className="min-h-screen bg-slate-950 text-slate-200">
-            <Navbar />
+            <Navbar locked={isTestLocked} />
 
             <main className="max-w-5xl mx-auto py-12 px-4 relative">
                 <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[600px] bg-blue-600/5 rounded-full blur-[120px] pointer-events-none" />
 
+                {isTestLocked && (
+                    <div className="mb-6 bg-amber-500/10 border border-amber-500/30 text-amber-200 rounded-2xl p-4 text-sm font-semibold">
+                        Test window is locked. Submit the current test before leaving this page.
+                    </div>
+                )}
+
                 <button
-                    onClick={() => navigate(-1)}
-                    className="group flex items-center gap-2 text-slate-500 hover:text-white mb-10 transition-all font-medium"
+                    onClick={() => {
+                        if (isTestLocked) {
+                            setLockMessage('Finish and submit your current test before leaving this page.');
+                            return;
+                        }
+                        navigate(-1);
+                    }}
+                    className={`group flex items-center gap-2 mb-10 transition-all font-medium ${
+                        isTestLocked ? 'text-slate-700 cursor-not-allowed' : 'text-slate-500 hover:text-white'
+                    }`}
                 >
                     <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
                     Back to Opportunities
@@ -270,35 +343,12 @@ const JobDetails = () => {
                                             ) : null}
 
                                             {eligibility?.questions?.length ? (
-                                                <div className="space-y-4 bg-slate-900/40 border border-slate-800 rounded-2xl p-4 max-h-[340px] overflow-auto">
-                                                    {eligibility.questions.map((q, idx) => (
-                                                        <div key={q.questionId} className="space-y-2">
-                                                            <p className="text-sm font-semibold text-slate-300">{idx + 1}. {q.question}</p>
-                                                            <div className="space-y-1">
-                                                                {q.options.map((opt) => (
-                                                                    <label key={opt} className="flex items-center gap-2 text-xs text-slate-400">
-                                                                        <input
-                                                                            type="radio"
-                                                                            name={q.questionId}
-                                                                            value={opt}
-                                                                            checked={eligibilityAnswers[q.questionId] === opt}
-                                                                            onChange={(e) =>
-                                                                                setEligibilityAnswers((prev) => ({ ...prev, [q.questionId]: e.target.value }))
-                                                                            }
-                                                                        />
-                                                                        {opt}
-                                                                    </label>
-                                                                ))}
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                    <button
-                                                        onClick={submitEligibility}
-                                                        disabled={eligibilityLoading}
-                                                        className="w-full btn-secondary h-12 border-blue-500/30 hover:border-blue-500/50"
-                                                    >
-                                                        {eligibilityLoading ? 'Submitting Test...' : 'Submit Eligibility Test'}
-                                                    </button>
+                                                <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 text-sm text-amber-200">
+                                                    Eligibility test opened in locked popup. Submit to continue.
+                                                </div>
+                                            ) : eligibility?.status === 'failed' ? (
+                                                <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-sm text-red-300">
+                                                    Eligibility test already failed. Reattempt is not allowed for this job.
                                                 </div>
                                             ) : eligibility?.status !== 'passed' ? (
                                                 <button
@@ -323,35 +373,12 @@ const JobDetails = () => {
                                                     ) : null}
 
                                                     {companyTest?.questions?.length ? (
-                                                        <div className="space-y-4 bg-slate-900/40 border border-slate-800 rounded-2xl p-4 max-h-[340px] overflow-auto">
-                                                            {companyTest.questions.map((q, idx) => (
-                                                                <div key={q.questionId} className="space-y-2">
-                                                                    <p className="text-sm font-semibold text-slate-300">{idx + 1}. {q.question}</p>
-                                                                    <div className="space-y-1">
-                                                                        {q.options.map((opt) => (
-                                                                            <label key={opt} className="flex items-center gap-2 text-xs text-slate-400">
-                                                                                <input
-                                                                                    type="radio"
-                                                                                    name={`company-${q.questionId}`}
-                                                                                    value={opt}
-                                                                                    checked={companyTestAnswers[q.questionId] === opt}
-                                                                                    onChange={(e) =>
-                                                                                        setCompanyTestAnswers((prev) => ({ ...prev, [q.questionId]: e.target.value }))
-                                                                                    }
-                                                                                />
-                                                                                {opt}
-                                                                            </label>
-                                                                        ))}
-                                                                    </div>
-                                                                </div>
-                                                            ))}
-                                                            <button
-                                                                onClick={submitCompanyTest}
-                                                                disabled={companyTestLoading}
-                                                                className="w-full btn-primary h-12"
-                                                            >
-                                                                {companyTestLoading ? 'Submitting Company Test...' : 'Submit Company Test'}
-                                                            </button>
+                                                        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 text-sm text-amber-200">
+                                                            Company test opened in locked popup. Submit to continue.
+                                                        </div>
+                                                    ) : companyTest?.status === 'failed' ? (
+                                                        <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-sm text-red-300">
+                                                            Company test already failed. Reattempt is not allowed for this job.
                                                         </div>
                                                     ) : !companyTest || companyTest.status !== 'passed' ? (
                                                         <button
@@ -381,6 +408,11 @@ const JobDetails = () => {
                                     {companyTestMessage && (
                                         <div className="mt-2 bg-slate-900 border border-slate-800 text-slate-300 rounded-2xl p-3 text-xs">
                                             {companyTestMessage}
+                                        </div>
+                                    )}
+                                    {lockMessage && (
+                                        <div className="mt-2 bg-amber-500/10 border border-amber-500/30 text-amber-200 rounded-2xl p-3 text-xs">
+                                            {lockMessage}
                                         </div>
                                     )}
                                     {error && (
@@ -430,6 +462,84 @@ const JobDetails = () => {
                     </div>
                 </div>
             </main>
+
+            {eligibilityModalOpen && eligibility?.questions?.length > 0 && (
+                <div className="fixed inset-0 z-[220] bg-black/75 backdrop-blur-sm p-4 flex items-center justify-center">
+                    <div className="w-full max-w-2xl bg-slate-900 border border-slate-700 rounded-2xl p-6 max-h-[90vh] overflow-auto">
+                        <h3 className="text-xl font-bold mb-2">Eligibility Test (Round 1)</h3>
+                        <p className="text-xs text-amber-300 mb-5">This popup is locked. Submit this test to continue.</p>
+                        <div className="space-y-4">
+                            {eligibility.questions.map((q, idx) => (
+                                <div key={q.questionId} className="space-y-2 bg-slate-800/50 border border-slate-700 rounded-xl p-3">
+                                    <p className="text-sm font-semibold text-slate-200">{idx + 1}. {q.question}</p>
+                                    <div className="space-y-1">
+                                        {q.options.map((opt) => (
+                                            <label key={opt} className="flex items-center gap-2 text-xs text-slate-300">
+                                                <input
+                                                    type="radio"
+                                                    name={q.questionId}
+                                                    value={opt}
+                                                    checked={eligibilityAnswers[q.questionId] === opt}
+                                                    onChange={(e) =>
+                                                        setEligibilityAnswers((prev) => ({ ...prev, [q.questionId]: e.target.value }))
+                                                    }
+                                                />
+                                                {opt}
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <button
+                            onClick={submitEligibility}
+                            disabled={eligibilityLoading}
+                            className="mt-5 w-full btn-secondary h-12 border-blue-500/30 hover:border-blue-500/50"
+                        >
+                            {eligibilityLoading ? 'Submitting Test...' : 'Submit Eligibility Test'}
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {companyModalOpen && companyTest?.questions?.length > 0 && (
+                <div className="fixed inset-0 z-[230] bg-black/80 backdrop-blur-sm p-4 flex items-center justify-center">
+                    <div className="w-full max-w-2xl bg-slate-900 border border-slate-700 rounded-2xl p-6 max-h-[90vh] overflow-auto">
+                        <h3 className="text-xl font-bold mb-2">Company Test (Round 2)</h3>
+                        <p className="text-xs text-amber-300 mb-5">This popup is locked. Submit this test to continue.</p>
+                        <div className="space-y-4">
+                            {companyTest.questions.map((q, idx) => (
+                                <div key={q.questionId} className="space-y-2 bg-slate-800/50 border border-slate-700 rounded-xl p-3">
+                                    <p className="text-sm font-semibold text-slate-200">{idx + 1}. {q.question}</p>
+                                    <div className="space-y-1">
+                                        {q.options.map((opt) => (
+                                            <label key={opt} className="flex items-center gap-2 text-xs text-slate-300">
+                                                <input
+                                                    type="radio"
+                                                    name={`company-${q.questionId}`}
+                                                    value={opt}
+                                                    checked={companyTestAnswers[q.questionId] === opt}
+                                                    onChange={(e) =>
+                                                        setCompanyTestAnswers((prev) => ({ ...prev, [q.questionId]: e.target.value }))
+                                                    }
+                                                />
+                                                {opt}
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <button
+                            onClick={submitCompanyTest}
+                            disabled={companyTestLoading}
+                            className="mt-5 w-full btn-primary h-12"
+                        >
+                            {companyTestLoading ? 'Submitting Company Test...' : 'Submit Company Test'}
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

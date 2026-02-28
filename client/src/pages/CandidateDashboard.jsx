@@ -16,13 +16,20 @@ const CandidateDashboard = () => {
             try {
                 const [appRes, jobRes] = await Promise.all([
                     api.get('/candidate/applications'),
-                    api.get('/jobs')
+                    api.get('/candidate/jobs/suitable')
                 ]);
+                const appliedJobIds = new Set(
+                    appRes.data.map((app) => String(app.jobId?._id || app.jobId || ''))
+                );
+                const recommendedJobs = jobRes.data
+                    .filter((job) => Number(job.matchScore || 0) >= 60)
+                    .filter((job) => !appliedJobIds.has(String(job._id)));
+
                 setStats({
                     applied: appRes.data.length,
                     shortlisted: appRes.data.filter(a => a.status === 'shortlisted').length
                 });
-                setRecentJobs(jobRes.data.slice(0, 3));
+                setRecentJobs(recommendedJobs.slice(0, 3));
             } catch (err) {
                 console.error(err);
             } finally {

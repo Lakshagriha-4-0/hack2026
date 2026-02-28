@@ -38,6 +38,26 @@ const RecruiterDashboard = () => {
         fetchMyJobs();
     }, []);
 
+    useEffect(() => {
+        if (typeof document === 'undefined') return undefined;
+        const shouldLockScroll = showCreate || showTestBuilder;
+        if (!shouldLockScroll) return undefined;
+
+        const originalOverflow = document.body.style.overflow;
+        const originalPaddingRight = document.body.style.paddingRight;
+        const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+
+        document.body.style.overflow = 'hidden';
+        if (scrollbarWidth > 0) {
+            document.body.style.paddingRight = `${scrollbarWidth}px`;
+        }
+
+        return () => {
+            document.body.style.overflow = originalOverflow;
+            document.body.style.paddingRight = originalPaddingRight;
+        };
+    }, [showCreate, showTestBuilder]);
+
     const fetchMyJobs = async () => {
         try {
             const { data } = await api.get('/jobs/mine');
@@ -75,13 +95,14 @@ const RecruiterDashboard = () => {
     };
 
     const addManualQuestion = () => {
+        const uniqueId = `rq_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         setRecruiterTest((prev) => ({
             ...prev,
             generatedBy: 'manual',
             questions: [
                 ...prev.questions,
                 {
-                    questionId: `rq${prev.questions.length + 1}`,
+                    questionId: uniqueId,
                     question: '',
                     options: ['', '', '', ''],
                     correctAnswer: '',
@@ -119,7 +140,7 @@ const RecruiterDashboard = () => {
         setRecruiterTest((prev) => ({
             ...prev,
             questions: validQuestions.map((q, idx) => ({
-                questionId: q.questionId || `rq${idx + 1}`,
+                questionId: `rq${idx + 1}`,
                 question: String(q.question || '').trim(),
                 options: (q.options || []).map((o) => String(o || '').trim()).filter(Boolean),
                 correctAnswer: String(q.correctAnswer || '').trim(),
@@ -169,7 +190,7 @@ const RecruiterDashboard = () => {
     return (
         <div className="min-h-screen bg-slate-950">
             <Navbar />
-            <main className="max-w-6xl mx-auto py-12 px-4 relative animate-fade-in">
+            <main className="max-w-6xl mx-auto py-12 px-4 relative">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 animate-slide-up gap-6">
                     <div>
                         <h1 className="text-4xl font-bold mb-2">Recruiter Center</h1>
@@ -184,8 +205,8 @@ const RecruiterDashboard = () => {
                 </div>
 
                 {showCreate && (
-                    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-                        <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl rounded-3xl p-8 shadow-2xl">
+                    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-start md:items-center justify-center z-[200] p-4 overflow-y-auto">
+                        <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl rounded-3xl p-8 shadow-2xl my-8 max-h-[calc(100vh-2rem)] overflow-y-auto overscroll-contain">
                             <h2 className="text-2xl font-bold mb-6">Create Job Posting</h2>
                             <form onSubmit={handleCreateJob} className="space-y-4">
                                 {createError && (
@@ -290,8 +311,8 @@ const RecruiterDashboard = () => {
                 )}
 
                 {showCreate && showTestBuilder && (
-                    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[120] p-4">
-                        <div className="bg-slate-900 border border-slate-700 w-full max-w-3xl rounded-2xl p-6 shadow-2xl max-h-[80vh] overflow-auto">
+                    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-start md:items-center justify-center z-[220] p-4 overflow-y-auto">
+                        <div className="bg-slate-900 border border-slate-700 w-full max-w-3xl rounded-2xl p-6 shadow-2xl my-8 max-h-[calc(100vh-2rem)] overflow-y-auto overscroll-contain">
                             <div className="flex items-center justify-between mb-4">
                                 <h3 className="text-xl font-bold">Recruiter Qualification Test</h3>
                                 <button onClick={() => setShowTestBuilder(false)} className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm">Close</button>

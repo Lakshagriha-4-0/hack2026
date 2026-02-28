@@ -1,6 +1,7 @@
 const Application = require('../models/Application');
 const Job = require('../models/Job');
 const User = require('../models/User');
+const EligibilityTest = require('../models/EligibilityTest');
 const { generateRecruiterRoundQuestions } = require('../utils/eligibilityTestUtils');
 
 // @desc    Get all applications for a specific job (anonymous)
@@ -24,7 +25,79 @@ const getJobApplications = async (req, res) => {
         .sort('-matchScore')
         .lean();
 
-    res.json(applications);
+    const candidateIds = applications
+        .map((app) => app.candidateId)
+        .filter(Boolean);
+
+    const tests = await EligibilityTest.find({
+        jobId: req.params.jobId,
+        candidateId: { $in: candidateIds },
+    })
+        .select('candidateId score status passScore submittedAt companyRound.score companyRound.status companyRound.passScore companyRound.submittedAt')
+        .lean();
+
+    const testsByCandidateId = new Map(
+        tests.map((test) => [String(test.candidateId), test])
+    );
+
+    const applicationsWithRoundResults = applications.map((app) => {
+        const test = testsByCandidateId.get(String(app.candidateId));
+        return {
+            ...app,
+            roundResults: {
+                firstRound: test
+                    ? {
+                        score: test.score,
+                        status: test.status,
+                        passScore: test.passScore,
+                        submittedAt: test.submittedAt,
+                    }
+                    : null,
+                secondRound: test?.companyRound
+                    ? {
+                        score: test.companyRound.score,
+                        status: test.companyRound.status,
+                        passScore: test.companyRound.passScore,
+                        submittedAt: test.companyRound.submittedAt,
+                    }
+                    : null,
+            },
+        };
+    });
+
+    res.json(applicationsWithRoundResults);
+};
+
+// @desc    Shortlist candidate for interview and notify candidate
+// @route   PUT /api/recruiter/applications/:appId/shortlist
+// @access  Private/Recruiter
+const shortlistForInterview = async (req, res) => {
+    const application = await Application.findById(req.params.appId);
+    if (!application) {
+        res.status(404);
+        throw new Error('Application not found');
+    }
+
+    if (application.recruiterId.toString() !== req.user._id.toString()) {
+        res.status(403);
+        throw new Error('Not authorized');
+    }
+
+    application.status = 'shortlisted';
+    application.interviewInvite = {
+        sentAt: new Date(),
+        message: `Interview shortlist sent for ${application.anonymousId}.`,
+    };
+    await application.save();
+
+    return res.json({
+        message: 'Candidate shortlisted for interview. Notification sent to applicant UID.',
+        application: {
+            _id: application._id,
+            status: application.status,
+            interviewInvite: application.interviewInvite,
+        },
+    });
 };
 
 // @desc    Manual status update disabled by workflow
@@ -110,6 +183,10 @@ const revealIdentity = async (req, res) => {
         res.status(403);
         throw new Error('Identity can be revealed only for shortlisted candidates');
     }
+    if (!application?.interviewInvite?.sentAt) {
+        res.status(403);
+        throw new Error('Click "Shortlist for Interview" first to notify candidate before revealing identity');
+    }
 
     res.json({
         anonymousId: application.anonymousId,
@@ -119,6 +196,7 @@ const revealIdentity = async (req, res) => {
 
 module.exports = {
     getJobApplications,
+    shortlistForInterview,
     updateApplicationStatus,
     generateJobTest,
     updateRecruiterProfile,
