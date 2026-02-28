@@ -75,7 +75,7 @@ const jobSchema = mongoose.Schema(
         },
         recruiterTest: {
             questions: { type: [recruiterTestQuestionSchema], default: [] },
-            passScore: { type: Number, default: 60, min: 0, max: 100 },
+            passScore: { type: Number, default: 0, min: 0, max: 100 },
             generatedBy: {
                 type: String,
                 enum: ['manual', 'ai'],

@@ -23,7 +23,7 @@ const RecruiterDashboard = () => {
     });
     const [recruiterTest, setRecruiterTest] = useState({
         generatedBy: 'manual',
-        passScore: 60,
+        passScore: 0,
         questions: [],
     });
 
@@ -87,7 +87,7 @@ const RecruiterDashboard = () => {
             setShowCreate(false);
             setShowTestBuilder(false);
             setNewJob({ title: '', description: '', requiredSkills: '', location: '', salaryRange: '', deadlineDate: '' });
-            setRecruiterTest({ generatedBy: 'manual', passScore: 60, questions: [] });
+            setRecruiterTest({ generatedBy: 'manual', passScore: 0, questions: [] });
             fetchMyJobs();
         } catch (err) {
             setCreateError(err.response?.data?.message || 'Failed to create job');
@@ -324,7 +324,7 @@ const RecruiterDashboard = () => {
                                     min="0"
                                     max="100"
                                     value={recruiterTest.passScore}
-                                    onChange={(e) => setRecruiterTest((prev) => ({ ...prev, passScore: Number(e.target.value || 60) }))}
+                                    onChange={(e) => setRecruiterTest((prev) => ({ ...prev, passScore: Number(e.target.value || 0) }))}
                                     className="w-full mt-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2"
                                 />
                             </div>

@@ -38,7 +38,7 @@ const eligibilityTestSchema = mongoose.Schema(
         },
         requiredSkillsSnapshot: { type: [String], default: [] },
         questions: { type: [questionSchema], default: [] },
-        passScore: { type: Number, default: 60, min: 0, max: 100 },
+        passScore: { type: Number, default: 0, min: 0, max: 100 },
         score: { type: Number, default: 0, min: 0, max: 100 },
         status: {
             type: String,
@@ -55,7 +55,7 @@ const eligibilityTestSchema = mongoose.Schema(
         submittedAt: Date,
         companyRound: {
             questions: { type: [questionSchema], default: [] },
-            passScore: { type: Number, default: 60, min: 0, max: 100 },
+            passScore: { type: Number, default: 0, min: 0, max: 100 },
             score: { type: Number, default: 0, min: 0, max: 100 },
             status: {
                 type: String,

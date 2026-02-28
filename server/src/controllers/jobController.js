@@ -60,7 +60,7 @@ const createJob = async (req, res) => {
             });
         }
 
-        const passScore = Number(recruiterTest?.passScore || 60);
+        const passScore = Number(recruiterTest?.passScore ?? 0);
 
         const job = new Job({
             recruiterId: req.user._id,
@@ -74,7 +74,7 @@ const createJob = async (req, res) => {
             status: 'active',
             recruiterTest: {
                 questions: normalizedQuestions,
-                passScore: Number.isFinite(passScore) ? Math.min(100, Math.max(0, passScore)) : 60,
+                passScore: Number.isFinite(passScore) ? Math.min(100, Math.max(0, passScore)) : 0,
                 generatedBy: recruiterTest?.generatedBy === 'ai' ? 'ai' : 'manual',
             },
         });

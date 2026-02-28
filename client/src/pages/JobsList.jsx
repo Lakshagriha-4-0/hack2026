@@ -27,11 +27,17 @@ const JobsList = () => {
         fetchJobs();
     }, []);
 
-    const filteredJobs = jobs.filter(job =>
-        job.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        job.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        job.requiredSkills.some(s => s.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
+    const normalizedSearch = searchTerm.toLowerCase();
+    const filteredJobs = jobs.filter((job) => {
+        const title = String(job?.title || '').toLowerCase();
+        const description = String(job?.description || '').toLowerCase();
+        const requiredSkills = Array.isArray(job?.requiredSkills) ? job.requiredSkills : [];
+        return (
+            title.includes(normalizedSearch) ||
+            description.includes(normalizedSearch) ||
+            requiredSkills.some((s) => String(s || '').toLowerCase().includes(normalizedSearch))
+        );
+    });
 
     return (
         <div className="min-h-screen bg-slate-950 text-slate-200">
@@ -116,13 +122,15 @@ const JobsList = () => {
                                         </p>
 
                                         <div className="flex flex-wrap gap-2 mb-8">
-                                            {job.requiredSkills.slice(0, 4).map(skill => (
+                                            {(Array.isArray(job.requiredSkills) ? job.requiredSkills : []).slice(0, 4).map(skill => (
                                                 <span key={skill} className="text-[10px] uppercase tracking-wider font-extrabold bg-slate-950/50 border border-slate-800 px-3 py-1.5 rounded-xl text-slate-400 group-hover:border-blue-500/20 group-hover:text-blue-400 transition-all">
                                                     {skill}
                                                 </span>
                                             ))}
-                                            {job.requiredSkills.length > 4 && (
-                                                <span className="text-[10px] font-extrabold text-slate-600 self-center">+{job.requiredSkills.length - 4} more</span>
+                                            {(Array.isArray(job.requiredSkills) ? job.requiredSkills.length : 0) > 4 && (
+                                                <span className="text-[10px] font-extrabold text-slate-600 self-center">
+                                                    +{(Array.isArray(job.requiredSkills) ? job.requiredSkills.length : 0) - 4} more
+                                                </span>
                                             )}
                                         </div>
                                     </div>

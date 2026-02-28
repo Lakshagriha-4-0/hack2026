@@ -22,7 +22,6 @@ const CandidateDashboard = () => {
                     appRes.data.map((app) => String(app.jobId?._id || app.jobId || ''))
                 );
                 const recommendedJobs = jobRes.data
-                    .filter((job) => Number(job.matchScore || 0) >= 60)
                     .filter((job) => !appliedJobIds.has(String(job._id)));
 
                 setStats({

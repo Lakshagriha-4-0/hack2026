@@ -499,7 +499,7 @@ const startEligibilityTest = async (req, res) => {
             $set: {
                 requiredSkillsSnapshot: job.requiredSkills || [],
                 questions,
-                passScore: 60,
+                passScore: 0,
                 score: 0,
                 status: 'pending',
                 answers: [],
@@ -623,7 +623,7 @@ const getCompanyTest = async (req, res) => {
         return res.json({
             status: 'passed',
             score: 100,
-            passScore: 100,
+            passScore: 0,
             message: 'You already passed all tests and your profile is shared with recruiter.',
         });
     }
@@ -646,7 +646,7 @@ const getCompanyTest = async (req, res) => {
         return res.status(403).json({
             status: 'failed',
             score: currentRound.score || 0,
-            passScore: currentRound.passScore || Number(job.recruiterTest?.passScore || 60),
+            passScore: currentRound.passScore ?? Number(job.recruiterTest?.passScore ?? 0),
             message: 'Company test already failed. Reattempt is not allowed for this job.',
         });
     }
@@ -659,7 +659,7 @@ const getCompanyTest = async (req, res) => {
                 options: q.options || [],
                 correctAnswer: q.correctAnswer,
             })),
-            passScore: Number(job.recruiterTest?.passScore || 60),
+            passScore: Number(job.recruiterTest?.passScore ?? 0),
             score: 0,
             status: 'pending',
             answers: [],
@@ -735,7 +735,7 @@ const submitCompanyTest = async (req, res) => {
     }
 
     const { score } = evaluateAnswers(round.questions, answers);
-    const passed = score >= (round.passScore || 60);
+    const passed = score >= (round.passScore ?? 0);
 
     eligibility.companyRound.answers = answers
         .map((a) => ({
@@ -752,7 +752,7 @@ const submitCompanyTest = async (req, res) => {
         return res.json({
             status: 'failed',
             score,
-            passScore: round.passScore || 60,
+            passScore: round.passScore ?? 0,
             message: 'Company test not passed. Reattempt is not allowed and your profile was not shared with recruiter.',
         });
     }
@@ -769,7 +769,7 @@ const submitCompanyTest = async (req, res) => {
     return res.json({
         status: 'passed',
         score,
-        passScore: round.passScore || 60,
+        passScore: round.passScore ?? 0,
         message: 'Company test passed. Your profile is now shared with recruiter.',
     });
 };
@@ -894,7 +894,7 @@ const submitMyWorkTest = async (req, res) => {
     }
 
     const { score } = evaluateAnswers(application.recruiterRoundTest.questions, answers);
-    const passed = score >= (application.recruiterRoundTest.passScore || 60);
+    const passed = score >= (application.recruiterRoundTest.passScore ?? 60);
 
     application.recruiterRoundTest.answers = answers
         .map((a) => ({
